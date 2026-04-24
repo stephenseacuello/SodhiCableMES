@@ -131,6 +131,28 @@ def bottleneck_whatif():
         return jsonify({"error": "Could not compute what-if"}), 500
 
 
+@bp.route("/api/bottleneck/shadow_prices")
+def bottleneck_shadow_prices():
+    """Run LP solver and return shadow prices for bottleneck context."""
+    try:
+        from engines.scheduling import solve_p1_product_mix
+        from db import get_db
+        db = get_db()
+        status, profit, quantities, shadows = solve_p1_product_mix(db)
+        # Sort by shadow price descending
+        sorted_sp = sorted(
+            [(wc, p) for wc, p in shadows.items() if abs(p) > 0.01],
+            key=lambda x: abs(x[1]), reverse=True
+        )
+        return jsonify({
+            "shadow_prices": [{"wc_id": wc, "price_per_hr": p} for wc, p in sorted_sp],
+            "lp_status": status,
+            "lp_profit": round(profit, 2) if profit else 0,
+        })
+    except Exception as e:
+        return jsonify({"shadow_prices": [], "error": str(e)})
+
+
 @bp.route("/api/bottleneck/kingman")
 def kingman():
     lam = float(request.args.get("lam", 0.3))

@@ -101,8 +101,13 @@ async function loadResources() {
 }
 
 async function runLP() {
-  const st=document.getElementById('lpStatus'); st.textContent='Solving...';
+  const st=document.getElementById('lpStatus'); st.textContent='Fetching baseline...';
   try {
+    // Step 1: Fetch current baseline before optimizing
+    const baseline = await apiFetch('/api/resources/baseline');
+    st.textContent = 'Solving LP...';
+
+    // Step 2: Run LP optimizer
     const d=await apiPost('/api/scheduling/solve',{solver:'p1'}); st.textContent='Done!';
     showToast('LP complete','success');
     if(d.result&&Array.isArray(d.result)&&d.result.length>=4){
@@ -111,19 +116,44 @@ async function runLP() {
       const excluded = Object.entries(quantities||{}).filter(([k,v])=>v===0).length;
       const totalQty = active.reduce((s,[k,v])=>s+v, 0);
 
+      // Compute deltas for comparison
+      const curProfit = baseline.total_profit || 0;
+      const curVolume = baseline.total_volume_kft || 0;
+      const curProducts = baseline.product_count || 0;
+      const profitDelta = profit - curProfit;
+      const profitPct = curProfit > 0 ? ((profitDelta / curProfit) * 100).toFixed(1) : '—';
+      const volumeDelta = totalQty - curVolume;
+
       document.getElementById('lpKPIs').innerHTML=`
         <div class="kpi-card green"><div class="kpi-label">Status</div><div class="kpi-value">${status}</div></div>
-        <div class="kpi-card green"><div class="kpi-label">Max Profit</div><div class="kpi-value">$${fmt(profit)}</div></div>
-        <div class="kpi-card blue"><div class="kpi-label">Products Selected</div><div class="kpi-value">${active.length} of ${active.length + excluded}</div></div>
+        <div class="kpi-card green"><div class="kpi-label">Optimized Profit</div><div class="kpi-value">$${fmt(profit)}</div></div>
+        <div class="kpi-card ${profitDelta>=0?'green':'red'}"><div class="kpi-label">vs Current</div><div class="kpi-value">${profitDelta>=0?'+':''}$${fmt(profitDelta)}</div><span class="kpi-unit">${profitPct}%</span></div>
         <div class="kpi-card blue"><div class="kpi-label">Total Volume</div><div class="kpi-value">${fmt(totalQty,1)}</div><span class="kpi-unit">KFT</span></div>`;
 
-      let html = '<p style="color:var(--text-secondary);margin-bottom:12px">The LP solver maximizes profit subject to work center capacity constraints. It selects the highest-margin products that fit within available capacity. Products at 0 are excluded because their capacity is better used for higher-margin items.</p>';
+      // Before/After Comparison Table
+      let html = '<h4 style="margin-bottom:8px">Current vs Optimized Comparison</h4>';
+      html += '<table class="data-table" style="margin-bottom:16px"><thead><tr><th>Metric</th><th>Current Mix</th><th>Optimized Mix</th><th>Delta</th></tr></thead><tbody>';
+      html += `<tr><td style="font-weight:600">Total Profit</td><td class="number">$${fmt(curProfit)}</td><td class="number" style="color:#22c55e;font-weight:700">$${fmt(profit)}</td><td class="number" style="color:${profitDelta>=0?'#22c55e':'#ef4444'}">${profitDelta>=0?'+':''}$${fmt(profitDelta)} (${profitPct}%)</td></tr>`;
+      html += `<tr><td style="font-weight:600">Products Produced</td><td class="number">${curProducts}</td><td class="number">${active.length}</td><td class="number">${active.length - curProducts >= 0 ? '+' : ''}${active.length - curProducts}</td></tr>`;
+      html += `<tr><td style="font-weight:600">Total Volume (KFT)</td><td class="number">${fmt(curVolume,1)}</td><td class="number">${fmt(totalQty,1)}</td><td class="number">${volumeDelta>=0?'+':''}${fmt(volumeDelta,1)}</td></tr>`;
 
-      html += '<h4>Optimal Product Mix (profit-maximizing allocation)</h4>';
-      html += '<table class="data-table"><thead><tr><th>Product</th><th>Quantity (KFT)</th><th>Margin ($/KFT)</th><th>Contribution ($)</th></tr></thead><tbody>';
+      // Find binding constraint (bottleneck)
+      const bindingWCs = Object.entries(shadows||{}).filter(([n,p])=>Math.abs(p)>0.01).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+      if (bindingWCs.length) {
+        html += `<tr><td style="font-weight:600">Bottleneck WC</td><td class="number" style="color:var(--text-muted)">—</td><td class="number" style="color:#ef4444">${bindingWCs[0][0]}</td><td class="number">Shadow: $${bindingWCs[0][1].toFixed(2)}/hr</td></tr>`;
+      }
+      html += '</tbody></table>';
+
+      html += '<p style="color:var(--text-secondary);margin-bottom:12px;font-size:12px">The LP solver maximizes profit subject to work center capacity constraints (including setup times). It reallocates capacity from lower-margin to higher-margin products.</p>';
+
+      html += '<h4>Optimal Product Mix</h4>';
+      html += '<table class="data-table"><thead><tr><th>Product</th><th>Optimal Qty (KFT)</th><th>Current Qty (KFT)</th><th>Change</th></tr></thead><tbody>';
       active.forEach(([p,q])=>{
-        // Estimate margin from product name/family
-        html+=`<tr><td><strong>${p}</strong></td><td class="number">${fmt(q,1)}</td><td class="number">—</td><td class="number">—</td></tr>`;
+        const curItem = (baseline.products||[]).find(b=>b.product_id===p);
+        const curQ = curItem ? curItem.total_qty_kft : 0;
+        const delta = q - curQ;
+        const deltaColor = delta > 0 ? '#22c55e' : delta < 0 ? '#ef4444' : 'var(--text-muted)';
+        html+=`<tr><td><strong>${p}</strong></td><td class="number">${fmt(q,1)}</td><td class="number">${fmt(curQ,1)}</td><td class="number" style="color:${deltaColor}">${delta>=0?'+':''}${fmt(delta,1)}</td></tr>`;
       });
       html+='</tbody></table>';
 
@@ -131,17 +161,17 @@ async function runLP() {
         html += `<p style="color:var(--text-muted);margin-top:12px;font-size:12px">${excluded} products excluded by optimizer (capacity allocated to higher-margin items)</p>`;
       }
 
-      if(shadows&&Object.keys(shadows).length){
-        const binding = Object.entries(shadows).filter(([n,p])=>Math.abs(p)>0.01).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
-        if (binding.length) {
-          html+='<h4 style="margin-top:16px">Binding Constraints (Shadow Prices)</h4>';
-          html+='<p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px">Shadow price = marginal value of one more hour of capacity at this WC. Higher price = tighter bottleneck.</p>';
-          html+='<table class="data-table"><thead><tr><th>Work Center Constraint</th><th>Shadow Price ($/hr)</th></tr></thead><tbody>';
-          binding.forEach(([n,p])=>{html+=`<tr><td>${n}</td><td class="number" style="color:${Math.abs(p)>1?'#ef4444':'var(--text-primary)'}">${p.toFixed(2)}</td></tr>`;});
-          html+='</tbody></table>';
-        }
+      if(bindingWCs.length){
+        html+='<h4 style="margin-top:16px">Binding Constraints (Shadow Prices)</h4>';
+        html+='<p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px">Shadow price = marginal value of one more hour of capacity at this WC. Higher price = tighter bottleneck.</p>';
+        html+='<table class="data-table"><thead><tr><th>Work Center</th><th>Shadow Price ($/hr)</th><th>Action</th></tr></thead><tbody>';
+        bindingWCs.forEach(([n,p])=>{
+          const action = Math.abs(p) > 2 ? 'Add capacity (overtime/shift)' : 'Monitor';
+          html+=`<tr><td>${n}</td><td class="number" style="color:${Math.abs(p)>1?'#ef4444':'var(--text-primary)'}">$${p.toFixed(2)}</td><td style="font-size:12px;color:var(--text-muted)">${action}</td></tr>`;
+        });
+        html+='</tbody></table>';
       } else {
-        html += '<p style="color:var(--text-muted);margin-top:12px;font-size:12px">No binding capacity constraints detected — the solution may be limited by demand (max order quantities) rather than capacity.</p>';
+        html += '<p style="color:var(--text-muted);margin-top:12px;font-size:12px">No binding capacity constraints — solution limited by demand (max order quantities) rather than capacity.</p>';
       }
 
       document.getElementById('lpResults').innerHTML=html;

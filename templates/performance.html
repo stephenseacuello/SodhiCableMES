@@ -21,6 +21,7 @@
   <button class="tab-btn" data-tab="tab-quality">Quality</button>
   <button class="tab-btn" data-tab="tab-scrap">Scrap Analysis</button>
   <button class="tab-btn" data-tab="tab-otd">On-Time Delivery</button>
+  <button class="tab-btn" data-tab="tab-util">Utilization Trend</button>
 </div>
 
 <!-- ===== TAB 1: OEE Drill-Down ===== -->
@@ -136,6 +137,29 @@
       <table class="data-table" id="otdTable">
         <caption class="sr-only">Work order delivery detail</caption>
         <thead><tr><th scope="col">WO ID</th><th scope="col">Product</th><th scope="col">Family</th><th scope="col">Due Date</th><th scope="col">Actual End</th><th scope="col">Days Early/Late</th><th scope="col">Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB 5: Utilization Trend ===== -->
+<div class="tab-content" id="tab-util">
+  <div class="kpi-grid">
+    <div class="kpi-card" id="uKpi-avg"><div class="kpi-label">Avg Utilization</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 85%</div></div>
+    <div class="kpi-card" id="uKpi-peak"><div class="kpi-label">Peak WC</div><div class="kpi-value">--</div><span class="kpi-unit"></span><div class="kpi-target">Highest utilization</div></div>
+    <div class="kpi-card" id="uKpi-low"><div class="kpi-label">Lowest WC</div><div class="kpi-value">--</div><span class="kpi-unit"></span><div class="kpi-target">Most idle</div></div>
+    <div class="kpi-card" id="uKpi-wcs"><div class="kpi-label">Work Centers</div><div class="kpi-value">--</div><span class="kpi-unit"></span><div class="kpi-target">Tracked</div></div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-card" style="grid-column: span 2"><h3>Utilization Trend by Work Center (Daily)</h3><div class="chart-container" style="height:400px"><canvas id="utilTrendChart" role="img" aria-label="Daily utilization trend by work center"></canvas></div></div>
+  </div>
+  <div class="chart-card">
+    <h3>Current Utilization by Work Center</h3>
+    <div style="max-height:400px;overflow-y:auto">
+      <table class="data-table" id="utilTable">
+        <caption class="sr-only">Work center utilization</caption>
+        <thead><tr><th scope="col">Work Center</th><th scope="col">Utilization %</th><th scope="col">Status</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -682,6 +706,94 @@ async function loadOTD() {
 }
 
 // ===================================================================
+// TAB 5: UTILIZATION TREND (lazy-load)
+// ===================================================================
+let utilLoaded = false;
+let utilTrendChartObj;
+
+async function loadUtilization() {
+  if (utilLoaded) return;
+  utilLoaded = true;
+
+  try {
+    // Fetch utilization trend data
+    const trendData = await apiFetch('/api/performance/utilization_trend');
+
+    // Fetch current utilization per WC
+    const utilData = await apiFetch('/api/performance/actual_utilization');
+    const utils = Array.isArray(utilData) ? utilData : (utilData.utilization || utilData.data || []);
+
+    // KPIs from current utilization — field is actual_util_pct
+    if (utils.length) {
+      const avgUtil = utils.reduce((s, u) => s + (u.actual_util_pct || 0), 0) / utils.length;
+      const peak = utils.reduce((a, b) => (a.actual_util_pct || 0) > (b.actual_util_pct || 0) ? a : b);
+      const low = utils.reduce((a, b) => (a.actual_util_pct || 0) < (b.actual_util_pct || 0) ? a : b);
+
+      setKPIAnimated('uKpi-avg', avgUtil.toFixed(1), '%', avgUtil >= 85 ? 'green' : avgUtil >= 70 ? 'yellow' : 'red');
+      const peakCard = document.getElementById('uKpi-peak');
+      if (peakCard) { peakCard.querySelector('.kpi-value').textContent = peak.wc_id || '--'; peakCard.className = 'kpi-card red'; }
+      const lowCard = document.getElementById('uKpi-low');
+      if (lowCard) { lowCard.querySelector('.kpi-value').textContent = low.wc_id || '--'; lowCard.className = 'kpi-card blue'; }
+      setKPIAnimated('uKpi-wcs', utils.length, '', 'blue');
+
+      // Utilization table
+      const tbody = document.querySelector('#utilTable tbody');
+      const sorted = [...utils].sort((a, b) => (b.actual_util_pct || 0) - (a.actual_util_pct || 0));
+      tbody.innerHTML = sorted.map(u => {
+        const pct = (u.actual_util_pct || 0).toFixed(1);
+        const color = pct >= 85 ? 'badge-red' : pct >= 70 ? 'badge-yellow' : 'badge-green';
+        const status = pct >= 85 ? 'Overloaded' : pct >= 70 ? 'Moderate' : 'Available';
+        return `<tr><td><strong>${u.wc_id}</strong></td><td class="number">${pct}%</td><td><span class="badge ${color}">${status}</span></td></tr>`;
+      }).join('');
+    }
+
+    // Trend chart — format: {data: {WC_ID: [values]}, dates: [...], work_centers: [...]}
+    setTimeout(() => {
+      const dates = trendData.dates || [];
+      const wcIds = trendData.work_centers || Object.keys(trendData.data || {});
+      const wcData = trendData.data || {};
+      if (!dates.length) return;
+
+      const lineColors = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#64748b','#a855f7','#06b6d4'];
+
+      const datasets = wcIds.slice(0, 12).map((wc, i) => {
+        const values = wcData[wc] || [];
+        return {
+          label: wc,
+          data: values.map(v => v || null),
+          borderColor: lineColors[i % lineColors.length],
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          pointRadius: 2,
+          borderWidth: 1.5,
+          spanGaps: true,
+        };
+      });
+
+      utilTrendChartObj = new Chart(document.getElementById('utilTrendChart'), {
+        type: 'line',
+        data: { labels: dates, datasets: datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            y: { min: 0, max: 100, title: { display: true, text: 'Utilization %' } },
+            x: { title: { display: true, text: 'Date' } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+            annotation: { annotations: {
+              target: { type: 'line', yMin: 85, yMax: 85, borderColor: '#ef4444', borderDash: [5,5], borderWidth: 2,
+                label: { display: true, content: '85% Target', position: 'start', backgroundColor: 'rgba(239,68,68,0.8)' } }
+            } }
+          }
+        }
+      });
+    }, 100);
+
+  } catch(e) { console.error('Utilization tab error:', e); }
+}
+
+// ===================================================================
 // TAB SWITCHING WITH LAZY LOAD
 // ===================================================================
 function initPerfTabs() {
@@ -704,6 +816,8 @@ function initPerfTabs() {
         setTimeout(() => loadScrap(), 50);
       } else if (tabId === 'tab-otd') {
         setTimeout(() => loadOTD(), 50);
+      } else if (tabId === 'tab-util') {
+        setTimeout(() => loadUtilization(), 50);
       }
     });
   });

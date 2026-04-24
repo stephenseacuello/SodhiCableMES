@@ -1,6 +1,6 @@
 /* SodhiCable MES v4.0 — Common JavaScript */
 
-// Fetch helper with error handling
+// Fetch helper with error handling + optional loading/error UI
 async function apiFetch(url, options = {}) {
   try {
     const resp = await fetch(url, options);
@@ -10,6 +10,25 @@ async function apiFetch(url, options = {}) {
   } catch (err) {
     showToast(err.message, 'error');
     throw err;
+  }
+}
+
+// Wrap a chart-loading function with loading skeleton + error boundary
+async function loadWithState(containerId, loadFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return loadFn();
+  const card = el.closest('.chart-card');
+  if (card) card.classList.add('loading');
+  try {
+    await loadFn();
+  } catch(e) {
+    el.innerHTML = `<div class="error-boundary">
+      <div style="font-size:14px;margin-bottom:4px">Failed to load data</div>
+      <div style="font-size:11px;color:var(--text-muted)">${e.message || 'Network error'}</div>
+      <button onclick="loadWithState('${containerId}', ${loadFn.name || 'null'})">Retry</button>
+    </div>`;
+  } finally {
+    if (card) card.classList.remove('loading');
   }
 }
 

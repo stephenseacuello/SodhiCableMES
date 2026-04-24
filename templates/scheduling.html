@@ -80,6 +80,15 @@
   <span id="solveStatus" style="color:var(--text-muted);font-size:12px"></span>
  </div></div>
 
+ <!-- Solver Description Panel -->
+ <div id="solverDesc" class="chart-card" style="margin-bottom:12px;border-left:4px solid var(--accent-blue);padding:12px 16px">
+  <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px">
+   <div><strong style="color:var(--accent-blue)">Objective:</strong> <span id="descObj">--</span></div>
+   <div><strong style="color:var(--accent-yellow)">Constraints:</strong> <span id="descCon">--</span></div>
+   <div><strong style="color:var(--accent-green)">When to use:</strong> <span id="descWhen">--</span></div>
+  </div>
+ </div>
+
  <div class="kpi-grid">
   <div class="kpi-card blue" id="kpi-obj"><div class="kpi-label">Objective</div><div class="kpi-value">--</div></div>
   <div class="kpi-card blue" id="kpi-makespan"><div class="kpi-label">Makespan</div><div class="kpi-value">--</div><span class="kpi-unit">min</span></div>
@@ -104,6 +113,36 @@
 // Family color map
 const familyColors = {A:'#3b82f6',B:'#ef4444',C:'#f59e0b',D:'#6366f1',I:'#14b8a6',M:'#f97316',R:'#8b5cf6',S:'#ec4899',U:'#22c55e'};
 let schedGantt = null, solverGantt = null;
+
+// Solver descriptions — plain English for each solver
+const SOLVER_DESC = {
+  p1:      {obj:'Maximize total weekly profit',                  con:'Work center capacity limits (incl. setup times)',         when:'Deciding which products to produce this week — product mix optimization'},
+  p2:      {obj:'Maximize total value of accepted work orders',  con:'WC capacity, binary accept/reject per WO',               when:'Too many WOs for available capacity — decide which to accept'},
+  p3:      {obj:'Minimize weighted tardiness (WSPT/EDD/Moore)',  con:'Single machine, no preemption, job deadlines',            when:'Sequencing jobs on a single extrusion line or test station'},
+  p4:      {obj:'Minimize makespan across parallel machines',    con:'m identical parallel machines (LPT heuristic)',           when:'Balancing load across parallel lines (e.g., CV-1, CV-2, CV-3)'},
+  p5:      {obj:'Minimize makespan (Johnson\'s Rule)',           con:'2-machine flow shop, fixed job sequence',                 when:'Two-stage production (e.g., extrusion then jacketing) sequencing'},
+  p5_neh:  {obj:'Minimize makespan (NEH heuristic)',             con:'m-machine flow shop, permutation schedule',              when:'Multi-stage production line with 3+ steps in sequence'},
+  p6:      {obj:'Minimize total supply chain cost',              con:'Supplier capacities, demand requirements, transport',     when:'Sourcing raw materials (copper, PVC resin) from multiple suppliers'},
+  p7:      {obj:'Minimize makespan via SA or GA metaheuristic',  con:'Job shop with setup times, machine eligibility',          when:'Complex scheduling with many constraints — when exact methods are too slow'},
+  p8:      {obj:'Maximize output given resource constraints',    con:'Labor, equipment, material availability',                 when:'Allocating limited resources (operators, reels, tooling) across WCs'},
+  p9:      {obj:'Minimize transportation cost',                  con:'Supply at origins, demand at destinations',               when:'Shipping finished cable from plant to regional warehouses'},
+  p10:     {obj:'Minimize total changeover time (TSP)',           con:'Campaign batching, setup times between families',         when:'Sequencing product families to minimize changeover (setup reduction)'},
+  p11:     {obj:'Minimize trim waste (bin-packing)',             con:'Master reel length, customer order lengths',              when:'Cutting cable reels to fill customer orders with minimal remnant waste'},
+};
+
+function updateSolverDesc() {
+  const solver = document.getElementById('solverSelect').value;
+  const desc = SOLVER_DESC[solver];
+  if (desc) {
+    document.getElementById('descObj').textContent = desc.obj;
+    document.getElementById('descCon').textContent = desc.con;
+    document.getElementById('descWhen').textContent = desc.when;
+  }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('solverSelect').addEventListener('change', updateSolverDesc);
+  updateSolverDesc(); // Initial
+});
 
 // ═══ CURRENT SCHEDULE ═══
 async function loadSchedule() {

@@ -47,6 +47,16 @@
  </div>
 </div>
 
+<!-- LP Shadow Prices — links bottleneck to LP optimization -->
+<div class="chart-card" style="margin-top:16px">
+ <h3>LP Shadow Prices — Marginal Value of Capacity</h3>
+ <p class="page-subtitle" style="margin-top:0;margin-bottom:12px">Shadow price = how much additional profit ($) each extra hour of capacity generates at a work center. Higher price = tighter bottleneck from LP perspective.</p>
+ <div id="shadowPriceContent" style="color:var(--text-muted)">
+  <button class="btn btn-primary" onclick="loadShadowPrices()">Run LP Analysis</button>
+  <span id="shadowStatus" style="font-size:12px;margin-left:8px"></span>
+ </div>
+</div>
+
 <!-- Kingman Curve -->
 <div class="chart-card" style="margin-top:16px">
  <h3>Kingman's Formula: Queue Wait vs Utilization</h3>
@@ -210,6 +220,45 @@ async function runWhatIf() {
     shifted ? `Bottleneck shifts from ${beforeBn} to ${afterBn}!` : `${wc} improved but ${afterBn} remains bottleneck`,
     shifted ? 'success' : 'info'
   );
+}
+
+async function loadShadowPrices() {
+  const status = document.getElementById('shadowStatus');
+  status.textContent = 'Running LP solver...';
+  try {
+    const d = await apiFetch('/api/bottleneck/shadow_prices');
+    const sp = d.shadow_prices || [];
+    const bnWC = currentData?.bottleneck_wc || '--';
+
+    let html = '';
+    if (d.lp_profit) {
+      html += `<div class="kpi-grid" style="margin-bottom:12px">
+        <div class="kpi-card green"><div class="kpi-label">LP Optimal Profit</div><div class="kpi-value">$${fmt(d.lp_profit)}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">LP Status</div><div class="kpi-value">${d.lp_status || '--'}</div></div>
+        <div class="kpi-card ${sp.length?'red':'green'}"><div class="kpi-label">Binding Constraints</div><div class="kpi-value">${sp.length}</div></div>
+      </div>`;
+    }
+
+    if (sp.length) {
+      html += '<table class="data-table"><thead><tr><th>Work Center</th><th>Shadow Price ($/hr)</th><th>Bottleneck Match</th><th>Recommendation</th></tr></thead><tbody>';
+      sp.forEach(s => {
+        const isBn = (s.wc_id === bnWC || (currentData?.utilizations||[]).find(u => u.wc_id === s.wc_id && u.is_bottleneck));
+        const matchBadge = isBn ? '<span class="badge badge-red">Current Bottleneck</span>' : '';
+        const price = Math.abs(s.price_per_hr);
+        const action = price > 5 ? 'High priority — add shift/overtime' : price > 2 ? 'Consider overtime' : 'Monitor';
+        html += `<tr><td><strong>${s.wc_id}</strong></td><td class="number" style="color:${price>2?'#ef4444':'var(--text-primary)'}">$${s.price_per_hr.toFixed(2)}</td><td>${matchBadge}</td><td style="font-size:12px">${action}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      html += '<p style="font-size:12px;color:var(--text-muted);margin-top:8px">Shadow prices from LP Product Mix solver (P1). WCs not listed have slack capacity (shadow price = $0).</p>';
+    } else {
+      html += '<p style="color:var(--accent-green)">No binding constraints — all work centers have sufficient capacity for the optimal product mix.</p>';
+    }
+
+    document.getElementById('shadowPriceContent').innerHTML = html;
+    status.textContent = '';
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+  }
 }
 
 document.addEventListener('DOMContentLoaded', loadBottleneck);

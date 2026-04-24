@@ -135,13 +135,22 @@ def dashboard_kpis():
     output_ft = db.execute(f"SELECT COALESCE(SUM(total_output_ft),1) AS o FROM shift_reports WHERE 1=1{filt}", params).fetchone()["o"]
     fpy = round((1 - scrap_ft / max(output_ft, 1)) * 100, 1)
 
-    # Utilization
+    # Utilization — compute ACTUAL from operations data (not static seed target)
     wcf = request.args.get("wc_id", "")
+    util_query = """
+        SELECT ROUND(
+            COALESCE(SUM(o.run_time_min + o.setup_time_min), 0) /
+            NULLIF(SUM(wc.capacity_hrs_per_week * 60), 1) * 100, 1
+        ) AS actual_util
+        FROM work_centers wc
+        LEFT JOIN operations o ON o.wc_id = wc.wc_id AND o.status = 'Complete'
+    """
+    util_params = []
     if wcf:
-        row = db.execute("SELECT ROUND(utilization_target*100,1) AS avg_util FROM work_centers WHERE wc_id=?", (wcf,)).fetchone()
-    else:
-        row = db.execute("SELECT ROUND(AVG(utilization_target)*100,1) AS avg_util FROM work_centers").fetchone()
-    util = row["avg_util"] if row["avg_util"] else 0
+        util_query += " WHERE wc.wc_id = ?"
+        util_params.append(wcf)
+    row = db.execute(util_query, util_params).fetchone()
+    util = row["actual_util"] if row and row["actual_util"] else 0
 
     return jsonify({"oee": oee, "throughput": completed, "wip": wip, "on_time": on_time, "fpy": fpy, "utilization": util})
 

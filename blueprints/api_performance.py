@@ -155,6 +155,61 @@ def scrap_trend():
     return jsonify([dict(r) for r in rows])
 
 
+@bp.route("/api/performance/utilization_trend")
+def utilization_trend():
+    """Daily utilization per WC: output_ft / (capacity_ft_per_hr * 8 hours)."""
+    from db import get_db
+    db = get_db()
+    rows = db.execute("""
+        SELECT sr.shift_date, sr.wc_id, wc.capacity_ft_per_hr,
+               SUM(sr.total_output_ft) AS total_output,
+               ROUND(SUM(sr.total_output_ft) * 1.0 / NULLIF(wc.capacity_ft_per_hr * 8, 0) * 100, 1) AS util_pct
+        FROM shift_reports sr
+        JOIN work_centers wc ON wc.wc_id = sr.wc_id
+        WHERE wc.capacity_ft_per_hr > 0
+        GROUP BY sr.shift_date, sr.wc_id
+        ORDER BY sr.shift_date ASC, sr.wc_id
+    """).fetchall()
+
+    # Group by date for chart consumption
+    by_date = {}
+    wc_set = set()
+    for r in rows:
+        d = r["shift_date"]
+        wc = r["wc_id"]
+        wc_set.add(wc)
+        if d not in by_date:
+            by_date[d] = {}
+        by_date[d][wc] = r["util_pct"] or 0
+
+    dates = sorted(by_date.keys())
+    wcs = sorted(wc_set)
+
+    return jsonify({
+        "dates": dates,
+        "work_centers": wcs,
+        "data": {wc: [by_date.get(d, {}).get(wc, 0) for d in dates] for wc in wcs},
+    })
+
+
+@bp.route("/api/performance/actual_utilization")
+def actual_utilization():
+    """Actual utilization per WC from operations data vs capacity."""
+    from db import get_db
+    db = get_db()
+    rows = db.execute("""
+        SELECT wc.wc_id, wc.name, wc.capacity_hrs_per_week, wc.utilization_target,
+               COALESCE(SUM(o.run_time_min + o.setup_time_min), 0) / 60.0 AS actual_hours,
+               ROUND(COALESCE(SUM(o.run_time_min + o.setup_time_min), 0) / 60.0 /
+                     NULLIF(wc.capacity_hrs_per_week, 0) * 100, 1) AS actual_util_pct
+        FROM work_centers wc
+        LEFT JOIN operations o ON o.wc_id = wc.wc_id AND o.status = 'Complete'
+        GROUP BY wc.wc_id
+        ORDER BY actual_util_pct DESC
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @bp.route("/api/performance/copper_recovery")
 def copper_recovery():
     from db import get_db

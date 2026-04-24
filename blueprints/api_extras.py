@@ -16,6 +16,45 @@ def resources_page():
     return render_template("resources.html")
 
 
+@bp.route("/api/resources/baseline")
+def resources_baseline():
+    """Current product mix from active work orders — baseline for LP comparison."""
+    from db import get_db
+    db = get_db()
+
+    rows = db.execute("""
+        SELECT wo.product_id, p.name AS product_name, p.family,
+               p.revenue_per_kft, p.cost_per_kft,
+               SUM(wo.order_qty_kft) AS total_qty_kft,
+               COUNT(*) AS wo_count
+        FROM work_orders wo
+        JOIN products p ON p.product_id = wo.product_id
+        WHERE wo.status IN ('Released', 'InProcess')
+        GROUP BY wo.product_id
+        ORDER BY SUM(wo.order_qty_kft) DESC
+    """).fetchall()
+
+    products = []
+    total_revenue = 0
+    total_volume = 0
+    for r in rows:
+        d = dict(r)
+        margin = (d["revenue_per_kft"] or 0) - (d["cost_per_kft"] or 0)
+        contribution = margin * d["total_qty_kft"]
+        total_revenue += contribution
+        total_volume += d["total_qty_kft"]
+        d["margin_per_kft"] = round(margin, 2)
+        d["contribution"] = round(contribution, 2)
+        products.append(d)
+
+    return jsonify({
+        "products": products,
+        "total_profit": round(total_revenue, 2),
+        "total_volume_kft": round(total_volume, 1),
+        "product_count": len(products),
+    })
+
+
 @bp.route("/api/resources/heatmap")
 def resource_heatmap():
     """Capacity heatmap: WC × shift load with WO assignments."""

@@ -189,6 +189,31 @@ def workcenter_detail(wc_id):
     """, (wc_id,)).fetchall()
     maintenance = [dict(r) for r in maint_rows]
 
+    # Throughput efficiency: actual ft/hr vs rated ft/hr
+    throughput = None
+    rated = wc_info.get("capacity_ft_per_hr")
+    if rated and rated > 0:
+        tp_row = db.execute("""
+            SELECT ROUND(SUM(sr.total_output_ft) * 1.0 / NULLIF(COUNT(*) * 8, 0), 1) AS actual_ft_per_hr
+            FROM shift_reports sr WHERE sr.wc_id = ?
+        """, (wc_id,)).fetchone()
+        actual_fph = tp_row["actual_ft_per_hr"] if tp_row and tp_row["actual_ft_per_hr"] else 0
+        throughput = {
+            "rated_ft_per_hr": rated,
+            "actual_ft_per_hr": actual_fph,
+            "efficiency_pct": round(actual_fph / rated * 100, 1) if rated else 0,
+        }
+
+    # Actual utilization for this WC
+    util_row = db.execute("""
+        SELECT ROUND(COALESCE(SUM(o.run_time_min + o.setup_time_min), 0) / 60.0 /
+               NULLIF(wc.capacity_hrs_per_week, 0) * 100, 1) AS actual_util
+        FROM work_centers wc
+        LEFT JOIN operations o ON o.wc_id = wc.wc_id AND o.status = 'Complete'
+        WHERE wc.wc_id = ?
+    """, (wc_id,)).fetchone()
+    actual_util = util_row["actual_util"] if util_row and util_row["actual_util"] else 0
+
     return jsonify({
         "wc_info": wc_info,
         "equipment": equipment,
@@ -197,6 +222,8 @@ def workcenter_detail(wc_id):
         "alarms": alarms,
         "environmental": environmental,
         "maintenance": maintenance,
+        "throughput": throughput,
+        "actual_utilization": actual_util,
     })
 
 

@@ -73,16 +73,19 @@ def solve_p1_product_mix(conn, overrides=None):
     cur.execute("SELECT wc_id, capacity_hrs_per_week, num_parallel FROM work_centers")
     wcs = _fetch_all_dicts(cur)
 
-    # Fetch routings
-    cur.execute("SELECT product_id, wc_id, process_time_min_per_100ft FROM routings")
+    # Fetch routings (including setup time for capacity accuracy)
+    cur.execute("SELECT product_id, wc_id, process_time_min_per_100ft, setup_time_min FROM routings")
     routings = _fetch_all_dicts(cur)
 
     # Build routing lookup: (product_id, wc_id) -> time per kft in hours
-    routing_map = {}
+    # Includes setup time: total = setup_hrs + process_hrs_per_kft * quantity
+    routing_map = {}   # (pid, wc_id) -> process hrs per kft
+    setup_map = {}     # (pid, wc_id) -> setup hrs (one-time per product per WC)
     for r in routings:
         # process_time_min_per_100ft -> hours per kft = time * 10 / 60
         hrs_per_kft = r["process_time_min_per_100ft"] * 10.0 / 60.0
         routing_map[(r["product_id"], r["wc_id"])] = hrs_per_kft
+        setup_map[(r["product_id"], r["wc_id"])] = (r["setup_time_min"] or 0) / 60.0
 
     # Build LP
     prob = LpProblem("ProductMix", LpMaximize)
@@ -117,7 +120,9 @@ def solve_p1_product_mix(conn, overrides=None):
             pid = p["product_id"]
             key = (pid, wc_id)
             if key in routing_map:
-                usage.append(routing_map[key] * x[pid])
+                # Total capacity = setup (one-time) + process_rate * quantity
+                setup_hrs = setup_map.get(key, 0)
+                usage.append(setup_hrs + routing_map[key] * x[pid])
         if usage:
             cname = f"Cap_{wc_id}"
             prob += lpSum(usage) <= cap, cname
@@ -137,7 +142,7 @@ def solve_p1_product_mix(conn, overrides=None):
     for wc in wcs:
         wc_id = wc["wc_id"]
         cap = wc["capacity_hrs_per_week"] * wc["num_parallel"]
-        # Calculate actual usage
+        # Calculate actual usage (process time + setup time)
         usage_hrs = 0
         for pid in quantities:
             qty = quantities[pid]
@@ -145,7 +150,7 @@ def solve_p1_product_mix(conn, overrides=None):
                 continue
             key = (pid, wc_id)
             if key in routing_map:
-                usage_hrs += routing_map[key] * qty
+                usage_hrs += setup_map.get(key, 0) + routing_map[key] * qty
 
         slack = cap - usage_hrs
         utilization = usage_hrs / cap if cap > 0 else 0
