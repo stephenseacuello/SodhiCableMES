@@ -1,9 +1,9 @@
 # SodhiCable MES v4.0 — User Guide
 
 ## System Overview
-SodhiCable MES is a web-based Manufacturing Execution System for wire & cable production implementing all 11 MESA functions plus 20 beyond-MESA capabilities including AI/ML (Isolation Forest, Gradient Boosting, Weibull RUL, Claude API), ISA-95 SCADA, ERP Level 4 simulation, OPC-UA tag simulator, and S&OP demand forecasting.
+SodhiCable MES is a web-based Manufacturing Execution System for wire & cable production implementing all 11 MESA functions plus 20 beyond-MESA capabilities including AI/ML (Isolation Forest, Gradient Boosting, Weibull RUL, Claude API), ISA-95 SCADA with throughput monitoring, ERP Level 4 simulation, OPC-UA tag simulator, LP optimization with before/after comparison, and S&OP demand forecasting.
 
-**244 API endpoints, 78 database tables, 35 pages, 17 engine modules.**
+**250 API endpoints, 75 database tables, 36 pages, 17 engine modules.**
 
 ---
 
@@ -11,9 +11,9 @@ SodhiCable MES is a web-based Manufacturing Execution System for wire & cable pr
 
 | Level | Page | Audience | Features | Refresh |
 |-------|------|----------|----------|---------|
-| Operator | Factory Floor, SCADA, Data Collection | Operators | Status tiles, sensor readings, alarms, SSE streams | 5s / real-time |
-| Supervisor | Dashboard | Supervisors | 6 KPIs, OEE by WC, Pareto, downtime, schedule adherence | 5s auto |
-| Manager | F11 Performance | Managers | OEE drill-down, Quality, Scrap, On-Time (4 tabs) | On demand |
+| Operator | Factory Floor, SCADA, Data Collection | Operators | Status tiles, sensor readings, throughput rate, alarms, SSE streams | 5s / real-time |
+| Supervisor | Dashboard | Supervisors | 6 KPIs (actual utilization from operations), OEE by WC, Pareto, downtime, schedule adherence | 5s auto |
+| Manager | F11 Performance | Managers | OEE drill-down, Quality, Scrap, On-Time, Utilization Trend (5 tabs) | On demand |
 | Executive | Executive | Plant Manager | Strategic KPIs, trends, top issues, filterable | 5s auto |
 | Enterprise | ERP (Level 4) | Finance/Supply Chain | 5 tabs: Dashboard, Planning, Orders, Supply Chain, ISA-95 | 15s auto |
 
@@ -25,7 +25,7 @@ SodhiCable MES is a web-based Manufacturing Execution System for wire & cable pr
 
 ### Dashboards
 
-**Production Dashboard (/)** — 6 KPI cards (OEE, throughput, WIP, on-time, FPY, utilization), 9 charts: OEE by WC (AxPxQ stacked), scrap Pareto, downtime by category (6 Big Losses), downtime by WC (stacked), scrap by WC (stacked), throughput trend (dual-axis: footage + OEE%), WO status donut, schedule adherence (KPI cards + table), PM status by WC (stacked) + PM timeline (horizontal bar, color by overdue/due-soon/ok). Fully filterable by datetime range, work center, shift, product family, and product/part number with cascading dropdowns. 5s auto-refresh respects active filters.
+**Production Dashboard (/)** — 6 KPI cards (OEE, throughput, WIP, on-time, FPY, actual utilization computed from operations data), 9 charts: OEE by WC (AxPxQ stacked), scrap Pareto, downtime by category (6 Big Losses), downtime by WC (stacked), scrap by WC (stacked), throughput trend (dual-axis: footage + OEE%), WO status donut, schedule adherence (KPI cards + table), PM status by WC (stacked) + PM timeline (horizontal bar, color by overdue/due-soon/ok). Fully filterable by datetime range, work center, shift, product family, and product/part number with cascading dropdowns. 5s auto-refresh respects active filters.
 
 **Executive Dashboard (/executive)** — 7 KPI cards: Plant OEE (with trend arrow vs previous period), On-Time Delivery, Cost/KFT, Scrap $, Revenue/KFT, Gross Margin %, Energy Cost. Charts: OEE trend (14-day line + 85% target), cost waterfall by product family (material/labor/overhead/scrap/energy/margin stacked), on-time by business unit (Defense/Infrastructure/Oil&Gas/Industrial stacked), on-time vs late donut. Sections: period-over-period comparison (auto-compares current vs previous equal-length period when date range set), material risk (low-stock/stockout items with lead times), top 5 issues (filtered by WC). Fully filterable by datetime range, work center, shift, product family, and product/part number. 5s auto-refresh.
 
@@ -36,15 +36,15 @@ SodhiCable MES is a web-based Manufacturing Execution System for wire & cable pr
 - **Supply Chain** — Purchase order management (create/approve/receive with ISA-95 logging), material availability with deficit flagging, supplier scorecards, supply risk coverage chart, buffer inventory status cards.
 - **ISA-95** — L3↔L4 boundary message log with direction filters (All/L4→L3/L3→L4), message flow chart by type. Demonstrates ISA-95 B2MML message exchange.
 
-**SCADA (/scada)** — ISA-95 L3→L2→L1 drill-down. Plant floor tiles (26 WCs), PLC/controller simulation, energy monitoring, spark test results for TEST WCs. Level 0 process descriptions. 5s auto-refresh.
+**SCADA (/scada)** — ISA-95 L3→L2→L1 drill-down. Plant floor tiles (26 WCs grouped by production stage), PLC/controller simulation, energy monitoring, spark test results for TEST WCs, **throughput efficiency** (actual vs rated ft/hr with efficiency %), **actual utilization** bar (computed from operations data), Level 0 process descriptions. 5s auto-refresh.
 
 **AI Insights (/ai)** — 3 tabs: Ask Claude (NLP → SQL), AI Insights (z-score anomalies + Isolation Forest + Gradient Boost quality + Weibull maintenance + changeover learning), Recommendations (prioritized actions with MESA function links).
 
 ### MESA-11 Functions
 
-**F1 Resource Allocation (/resources)** — Capacity heatmap, WO assignment board, capacity-vs-load chart, LP optimizer.
+**F1 Resource Allocation (/resources)** — 2 tabs: Capacity Overview (heatmap, WO assignment board, capacity-vs-load chart, capacity gaps), **LP Optimizer** (runs P1 solver with **before/after comparison** — shows Current vs Optimized profit, volume, product count, and bottleneck WC side-by-side; shadow prices with action recommendations).
 
-**F2 Scheduling (/scheduling)** — 12 solvers (P1-P11), Gantt chart, drag-and-drop reorder.
+**F2 Scheduling (/scheduling)** — 2 tabs: Current Schedule (Gantt chart, drag-and-drop reorder), Run Solver (12 solvers P1-P11 + NEH, each with **plain-English description** showing objective, constraints, and when to use; Gantt chart + results table).
 
 **F3 Dispatching (/dispatch)** — Priority-scored queue, Dispatch Next button, score breakdown, cert validation.
 
@@ -66,7 +66,7 @@ SodhiCable MES is a web-based Manufacturing Execution System for wire & cable pr
 
 **F10 Traceability (/traceability)** — Forward/backward genealogy via recursive CTEs. Tree/Graph visual toggle. 8 documented edge cases. Splice zone detection. Print marking verification. Certificate of Compliance generation. Risk-scored quarantine.
 
-**F11 Performance (/performance)** — 4 tabs: OEE Drill-Down (filters, waterfall, 6 Big Losses, trend, by-WC, CSV export), Quality (FPY, Cpk, NCRs), Scrap Analysis (Pareto, by-WC, trend), On-Time Delivery (by-family, status detail).
+**F11 Performance (/performance)** — 5 tabs: OEE Drill-Down (filters, waterfall, 6 Big Losses, trend, by-WC, CSV export), Quality (FPY, Cpk, NCRs, spark pass rate), Scrap Analysis (Pareto, by-WC, trend), On-Time Delivery (by-family, status detail), **Utilization Trend** (daily utilization per WC with multi-line chart, 85% target reference line, current utilization table sorted by load, peak/lowest WC KPIs).
 
 ### Operations
 
@@ -80,7 +80,7 @@ SodhiCable MES is a web-based Manufacturing Execution System for wire & cable pr
 
 **DES Simulation (/des, /simulation)** — 8-stage factory, queueing analytics, what-if scenarios, SSE streaming. Simulation writes to operational tables for live dashboard integration.
 
-**Bottleneck (/bottleneck)** — Kingman's G/G/c, shifting bottleneck, capacity what-if.
+**Bottleneck (/bottleneck)** — Kingman's G/G/1 formula, utilization ranking, what-if capacity scenarios, **LP shadow prices** (run LP analysis to see marginal value of capacity per WC, with bottleneck match indicators and action recommendations).
 
 ### System
 
@@ -121,6 +121,6 @@ COMPOUND → DRAW → STRAND → CV/PLCV/LPML/PX/PT → FOIL/TAPE → BRAID → 
 ## ISA-95 Levels
 - **Level 4 (ERP):** `/erp` — 5 tabs: Dashboard (KPIs + financials), Planning (S&OP + MRP), Orders (OTC + ATP), Supply Chain (POs + inventory + suppliers), ISA-95 (message boundary)
 - **Level 3 (MES):** All MESA-11 functions (F1-F11) — the core MES layer
-- **Level 2 (SCADA):** `/scada` PLC simulation, `/process` PID/alarms
+- **Level 2 (SCADA):** `/scada` PLC simulation + throughput efficiency + actual utilization, `/process` PID/alarms
 - **Level 1 (Sensing):** `/scada` sensors, SSE streams, OPC-UA simulator
 - **Level 0 (Physical):** `/simulation` DES, `/des` queueing analytics

@@ -12,24 +12,28 @@
 ```bash
 cd sodhicable_flask
 pip install flask anthropic    # anthropic optional (enables AI queries)
-python init_db.py              # Creates DB: 78 tables, 32,000+ rows
+python init_db.py              # Creates DB: 75 tables, 23,000+ rows
 ./start.sh                     # http://localhost:5001 with AI + live sims
 ```
 
 ## What You'll See
 
 ### 5-Minute Tour
-1. **Dashboard** `/` — 6 KPIs, OEE by WC, scrap Pareto (auto-refreshes 5s, fully filterable)
+1. **Dashboard** `/` — 6 KPIs (actual utilization from operations), OEE by WC, scrap Pareto (auto-refreshes 5s, fully filterable)
 2. **Executive** `/executive` — Strategic KPIs with date/WC/shift/family/product filters
 3. **ERP** `/erp` — Level 4 (5 tabs): Dashboard, Planning (S&OP + MRP), Orders (OTC pipeline + ATP), Supply Chain (POs + inventory + suppliers), ISA-95
-4. **SCADA** `/scada` — Click any WC → Level 2 (PLC/energy) → Level 1 (sensors)
+4. **SCADA** `/scada` — Click any WC → Level 2 (PLC/energy/throughput/utilization) → Level 1 (sensors)
 5. **AI** `/ai` → Ask Claude any question, or view Isolation Forest / Gradient Boost predictions
 6. **System** `/system` → Start OPC-UA sim, run live demo scenarios, view DB stats
 7. **Demo** `/demo` → Run full shift walkthrough with dot + swim-lane timeline
-8. **F5 Data Collection** `/datacollect` → 58 sensors grouped by WC, sparklines, SSE live stream, click any sensor for trend
-9. **F8 Process** `/process` → Live readings, CUSUM/EWMA, alarm cascade, PID sim
-9. **F9 Maintenance** `/equipment` → Downtime analysis, Weibull CDF curves (varied per equipment), Complete PM button (resets failure clock), PM schedule
-10. **F10 Traceability** `/traceability` → Tree/Graph toggle, splice zones, C of C generation
+8. **F1 Resources** `/resources` → Capacity heatmap, LP optimizer with before/after profit comparison
+9. **F2 Scheduling** `/scheduling` → 12 solvers with plain-English descriptions, Gantt chart
+10. **F5 Data Collection** `/datacollect` → 58 sensors grouped by WC, sparklines, SSE live stream, click any sensor for trend
+11. **F8 Process** `/process` → Live readings, CUSUM/EWMA, alarm cascade, PID sim
+12. **F9 Maintenance** `/equipment` → Downtime analysis, Weibull CDF curves (varied per equipment), Complete PM button (resets failure clock), PM schedule
+13. **F10 Traceability** `/traceability` → Tree/Graph toggle, splice zones, C of C generation
+14. **F11 Performance** `/performance` → OEE drill-down, Quality, Scrap, On-Time, Utilization Trend (5 tabs)
+15. **Bottleneck** `/bottleneck` → Kingman's formula, what-if, LP shadow prices
 
 ### Live Demo Scenarios (on `/system` page)
 | Scenario | Duration | What to watch |
@@ -40,7 +44,7 @@ python init_db.py              # Creates DB: 78 tables, 32,000+ rows
 | Quality Crisis | 55s | F10 trace, AI risk scores, 3 new holds |
 | Shift Handover | 35s | F11 reports, Dashboard OEE, F6 handoff |
 
-### All Pages (35+)
+### All Pages (36)
 | Category | Pages |
 |----------|-------|
 | Dashboards | Dashboard, Executive, ERP (Level 4), SCADA, AI Insights |
@@ -50,10 +54,10 @@ python init_db.py              # Creates DB: 78 tables, 32,000+ rows
 | System | Factory Floor, Demo, About, System Metrics |
 
 ## Data Model
-- **78 tables** + 9 views
+- **75 tables** + 9 views
 - **26 work centers** including STRAND-1
 - **69 equipment** with per-line breakdown
-- **244 API endpoints**
+- **250 API endpoints**
 - **17 engine modules** (pure Python, no numpy/scipy)
 
 ## API Examples
@@ -63,6 +67,10 @@ curl http://localhost:5001/api/scada/plant_overview
 curl http://localhost:5001/api/ai/isolation_forest
 curl http://localhost:5001/api/traceability/certificate/WO-2026-001
 curl http://localhost:5001/api/scenario/list
+curl http://localhost:5001/api/resources/baseline          # Current product mix
+curl http://localhost:5001/api/bottleneck/shadow_prices     # LP shadow prices
+curl http://localhost:5001/api/performance/utilization_trend # Daily util per WC
+curl http://localhost:5001/api/performance/actual_utilization # Current util per WC
 ```
 
 ## ISE 573 Lab Setup

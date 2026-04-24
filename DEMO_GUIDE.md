@@ -8,7 +8,7 @@
 
 ```bash
 cd sodhicable_flask
-python init_db.py        # Fresh DB: 389 shift reports, 74 tables, ~22K rows
+python init_db.py        # Fresh DB: 75 tables, ~23K rows
 ./start.sh               # Auto-starts OPC-UA sim + ERP sim
 ```
 
@@ -24,6 +24,7 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 ### Act 1: "The Plant is Running" (3 min)
 
 1. Show **Dashboard** (`/`) — point out the 6 KPIs auto-refreshing every 5s
+   - **Utilization KPI** is computed from actual operations data, not a static target
 2. Click the **?** button in the sidebar footer → guided tour walks through each KPI and chart
 3. Note: "This refreshes live — the OPC-UA simulator is generating correlated sensor data right now"
 4. Point out a Suspect/Bad reading appearing (lowered thresholds mean ~15% show yellow)
@@ -33,9 +34,10 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 
 1. Click **SCADA** (`/scada`) → show the 26 WC tiles grouped by factory stage
    - Production flow strip at top: COMPOUND → DRAW & STRAND → EXTRUSION → SHIELD & BRAID → CABLE & ARMOR → TEST → CUT & SHIP
-2. Click **CV-1** → Level 2: PLC status, energy monitoring, live parameters, active recipe
+2. Click **CV-1** → Level 2: PLC status, **throughput efficiency** (actual vs rated ft/hr), **actual utilization bar**, energy monitoring, live parameters, active recipe
    - Point out the ISA-95 badge changing from "Level 3" to "Level 2"
    - Show the data flow panel: L1 Sensors → L2 Control → L3 MES → L4 Business
+   - "Throughput efficiency compares actual ft/hr against rated capacity — CV-1 is running at 111% of rated speed"
 3. Click **Temperature_F** → Level 1: trend chart with CUSUM/EWMA analysis
    - Point out the ISA-95 badge changing to "Level 1 — Sensing & Actuation"
    - Show the Level 0 process description card
@@ -44,7 +46,7 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 
 1. Switch to **System** tab (`/system`) → click **"Spark Test Failure"** scenario button
 2. Switch immediately to **Dashboard** tab — watch:
-   - OEE card drops (visible because seed reports are only 389, not 1,000+)
+   - OEE card drops (visible because seed reports are limited for demo visibility)
    - Notification bell count goes up
    - Scrap Pareto chart updates
 3. Click **notification bell** → see "Critical: SparkTest on CV-1" → click it → goes to F8 Process Control
@@ -55,14 +57,20 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 7. Show **risk-scored quarantine**: "3 lots HIGH risk (re-inspect), 2 MEDIUM (review), 3 LOW (release immediately)"
    - Key message: "We reduced quarantine scope from 100% to 37.5%"
 
-### Act 4: "AI Asks the Right Question" (3 min)
+### Act 4: "Optimization & AI" (4 min)
 
-1. Go to **AI Insights** (`/ai`) → **Ask Claude** tab
-2. Type: **"What caused the CV-1 failure?"** → Claude generates SQL, queries DB, explains the result
-3. Type: **"What is the OEE for each work center?"** → shows breakdown with CV-1 now lower
-4. Type: **"Who can run CV-1 on the night shift?"** → queries personnel certs
-5. Point out: "This is Claude Sonnet analyzing our 78-table database in real-time — no pre-built queries"
-6. Switch to **AI Insights** tab → show Isolation Forest anomalies, Gradient Boost quality predictions
+1. Go to **F1 Resources** (`/resources`) → **LP Optimizer** tab → click **Run LP**
+   - Show the **before/after comparison table**: "Current mix generates $672, LP optimizes to $1,567"
+   - Point out shadow prices: "The LP tells us which WCs are the real bottlenecks — not just utilization, but economic value"
+2. Go to **F2 Scheduling** (`/scheduling`) → **Run Solver** tab
+   - Select different solvers — show the **description panel** updating: objective, constraints, when to use
+   - "We have 12 different optimization algorithms, each for a different manufacturing scenario"
+3. Go to **Bottleneck** (`/bottleneck`) → click **Run LP Analysis**
+   - Show shadow prices alongside Kingman's utilization ranking
+   - "The highest utilization WC isn't always the most expensive bottleneck — shadow prices tell us where adding capacity has the highest ROI"
+4. Go to **AI Insights** (`/ai`) → **Ask Claude** tab
+   - Type: **"What caused the CV-1 failure?"** → Claude generates SQL, queries DB, explains the result
+   - Type: **"What is the OEE for each work center?"** → shows breakdown with CV-1 now lower
 
 ### Act 5: "The System Recovers" (2 min)
 
@@ -70,9 +78,11 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
    - Show Weibull CDF curves — "Each curve shows failure probability over time"
    - Point out the 10% PM target line
 2. Click **Complete PM** on an overdue item → "CDF clock resets, next PM scheduled"
-3. Go to **Executive** dashboard (`/executive`) → show strategic KPIs with scrap cost impact
-4. Go to **ERP** (`/erp`) → show how L4 financial impact flows up (ISA-95 L3→L4)
-   - Purchase orders, invoices, shipments, ISA-95 message log
+3. Go to **F11 Performance** (`/performance`) → **Utilization Trend** tab
+   - Show daily utilization per WC over time, 85% target line
+   - "This shows how utilization changes day-to-day — not a static target but actual computed data"
+4. Go to **Executive** dashboard (`/executive`) → show strategic KPIs with scrap cost impact
+5. Go to **ERP** (`/erp`) → show how L4 financial impact flows up (ISA-95 L3→L4)
 
 ### Act 6: "What Makes This Different" (2 min)
 
@@ -81,7 +91,7 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 2. Switch to **Beyond MESA-11** tab → "20 capabilities beyond the original 1997 framework"
 3. Switch to **References** tab → show the **Research Gap Statement**:
    - "No peer-reviewed publication presents a complete MESA-11 for wire & cable"
-4. Show terminal: `pytest tests/ -v` → **41 tests all pass in 6 seconds**
+4. Show terminal: `pytest tests/ -v` → **tests pass**
 5. Show: `docker-compose up` → "Runs anywhere with one command"
 6. Show: `python validate.py` → quantitative validation with before/after metrics
 
@@ -113,14 +123,17 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 |----------|--------------|-------------------|
 | "How do I run this?" | `./start.sh` or `docker-compose up` | Single command, zero infrastructure |
 | "How does ISA-95 fit?" | About → Tab 2 (pyramid), SCADA (drill-down) | Full L0-L4 with data flow examples |
+| "What about optimization?" | F1 → LP Optimizer (before/after), F2 → solver descriptions | 12 solvers, setup times in LP, shadow prices |
+| "Show me utilization" | SCADA L2 (throughput), F11 → Utilization Trend tab | Actual from operations, not static targets |
 | "What about AI?" | AI → Ask Claude + Isolation Forest + Gradient Boost | Pure Python ML, no sklearn needed |
 | "Show me genealogy" | Traceability → Graph View → risk scoring | 8 edge cases documented (splice, regrind, remnants) |
 | "What about labor?" | Labor → run fatigue or training pipeline scenario | 5 what-if scenarios, Folkard & Tucker citation |
 | "Can it handle a crisis?" | System → Quality Crisis scenario | Watch the cascade across 5 MESA functions |
 | "Is this publishable?" | About → References → Research Gap | No published wire/cable MES exists in literature |
-| "What are the tests?" | `pytest tests/ -v` → 41 passed | 8 test files covering all MESA functions + AI |
+| "What are the tests?" | `pytest tests/ -v` | 13 test files covering MESA functions + AI |
 | "How realistic is the data?" | Correlated sensors, WO progression, 5 scenarios | Cross-parameter correlation, sustained drift injection |
 | "What about OEE?" | F11 → OEE Drill-Down tab | Full waterfall, 6 Big Losses, trend, by-WC, CSV export |
+| "What about bottlenecks?" | Bottleneck → LP shadow prices | Kingman's + economic bottleneck identification via LP |
 | "Energy management?" | SCADA → Level 2 → Energy card | 4,800 energy readings, kWh/KFT per WC |
 | "Certificate of Compliance?" | `/api/traceability/certificate/WO-2026-001` | Auto-generated C of C with test results + genealogy |
 
@@ -130,18 +143,18 @@ Wait 30 seconds for live data to start flowing. Open 3 browser tabs:
 
 | Metric | Value |
 |--------|-------|
-| API Endpoints | 245 |
-| Database Tables | 74 + 9 views |
-| Seed Data Rows | ~22,000 |
+| API Endpoints | 250 |
+| Database Tables | 75 + 9 views |
+| Seed Data Rows | ~23,000 |
 | Engine Modules | 17 (pure Python) |
-| Test Cases | 41 (all passing) |
+| Test Files | 13 |
 | Work Centers | 26 (including STRAND-1) |
 | Equipment Items | 69 |
 | Products | 33 across 9 families |
+| Scheduling Solvers | 12 (P1-P11 + NEH) |
 | Paper | 39 pages, 24 references |
 | External Dependencies | Flask + anthropic (optional) |
-| API Response Time | Avg 8.8ms, Max 52.8ms |
-| Genealogy Trace | <5ms (target was <10,000ms) |
+| HTML Pages | 36 |
 
 ---
 
@@ -171,6 +184,6 @@ If something breaks during the demo:
 
 1. **Paper:** `paper/Eacuello_MES_Design_Prototype.pdf` (39 pages, 24 references)
 2. **Validation:** `python validate.py` output showing before/after metrics
-3. **Tests:** `pytest tests/ -v` output showing 41 tests passing
+3. **Tests:** `pytest tests/ -v` output
 4. **Code:** The entire `sodhicable_flask/` directory (or Docker image)
 5. **This guide:** `DEMO_GUIDE.md` for reproducing the demo
