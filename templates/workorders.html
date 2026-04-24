@@ -1,0 +1,197 @@
+{% extends "base.html" %}{% set active_page = "workorders" %}
+{% block title %}Work Orders — SodhiCable MES{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center">
+  <h1 class="page-title" style="margin-bottom:0">Work Order Management</h1>
+  <a href="/api/workorders/export" class="btn-export">Export CSV</a>
+</div>
+<p class="page-subtitle">Create, track, and manage production work orders — full lifecycle: Pending → Released → InProcess → QCHold → Complete</p>
+
+<div class="control-panel"><div class="control-row">
+ <div class="control-group"><label for="filterStatus">Filter Status</label>
+  <select id="filterStatus" onchange="loadWOs()">
+   <option value="">All Statuses</option>
+   <option value="Pending">Pending</option><option value="Released">Released</option>
+   <option value="InProcess">In Process</option><option value="QCHold">QC Hold</option>
+   <option value="Complete">Complete</option><option value="Cancelled">Cancelled</option>
+  </select>
+ </div>
+ <button class="btn btn-primary" onclick="showCreateForm()">+ New Work Order</button>
+</div></div>
+
+<!-- Create WO Form (hidden by default) -->
+<div class="chart-card" id="createForm" style="display:none;margin-bottom:16px;border:2px solid var(--accent-blue)">
+ <h3>Create New Work Order</h3>
+ <div class="control-row" style="flex-wrap:wrap;gap:12px">
+  <div class="control-group"><label for="newProduct">Product</label>
+   <select id="newProduct" style="min-width:200px"></select>
+  </div>
+  <div class="control-group"><label for="newQty">Quantity (KFT)</label>
+   <input type="number" id="newQty" value="100" min="1" max="50000" style="width:100px">
+  </div>
+  <div class="control-group"><label for="newPriority">Priority (1=highest)</label>
+   <select id="newPriority"><option value="1">1 - Urgent</option><option value="2">2 - High</option><option value="3" selected>3 - Normal</option><option value="4">4 - Low</option><option value="5">5 - Routine</option></select>
+  </div>
+  <div class="control-group"><label for="newBU">Business Unit</label>
+   <select id="newBU"><option>Defense</option><option selected>Industrial</option><option>Infrastructure</option><option>Oil & Gas</option></select>
+  </div>
+  <div class="control-group"><label for="newDueDate">Due Date</label>
+   <input type="date" id="newDueDate" value="2026-05-01">
+  </div>
+  <div style="display:flex;gap:8px;align-self:flex-end">
+   <button class="btn btn-success" onclick="createWO()">Create WO</button>
+   <button class="btn" style="background:var(--bg-secondary);color:var(--text-secondary)" onclick="hideCreateForm()">Cancel</button>
+  </div>
+ </div>
+</div>
+
+<!-- KPI Summary -->
+<div class="kpi-grid" id="woKPIs" style="margin-bottom:16px" aria-live="polite"></div>
+
+<!-- WO Table -->
+<div class="chart-card">
+ <h3>Work Orders (<span id="woCount">0</span>)</h3>
+ <div style="max-height:500px;overflow-y:auto">
+  <table class="data-table" id="woTable">
+   <caption class="sr-only">Work orders list</caption>
+   <thead><tr><th scope="col">WO ID</th><th scope="col">Product</th><th scope="col">Family</th><th scope="col">Qty (KFT)</th><th scope="col">Priority</th><th scope="col">Due Date</th><th scope="col">Business Unit</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+   <tbody></tbody>
+  </table>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+const statusColors = {Pending:'gray', Released:'blue', InProcess:'yellow', QCHold:'red', Complete:'green', Cancelled:'gray'};
+
+async function loadWOs() {
+  const filter = document.getElementById('filterStatus').value;
+  const data = await apiFetch('/api/workorders/list');
+  let wos = Array.isArray(data) ? data : (data.data || data.work_orders || []);
+
+  if (filter) {
+    wos = wos.filter(wo => wo.status === filter);
+  }
+
+  document.getElementById('woCount').textContent = wos.length;
+
+  // KPI summary
+  const all = Array.isArray(data) ? data : (data.data || data.work_orders || []);
+  const counts = {};
+  all.forEach(wo => { counts[wo.status] = (counts[wo.status] || 0) + 1; });
+  document.getElementById('woKPIs').innerHTML = Object.entries(counts).map(([status, count]) => {
+    const color = statusColors[status] || 'blue';
+    return `<div class="kpi-card ${color}"><div class="kpi-label">${status}</div><div class="kpi-value">${count}</div></div>`;
+  }).join('');
+
+  // Table
+  const tbody = document.querySelector('#woTable tbody');
+  tbody.innerHTML = wos.map(wo => {
+    const color = statusColors[wo.status] || 'gray';
+    const daysLeft = wo.due_date ? Math.round((new Date(wo.due_date) - new Date()) / 86400000) : '?';
+    const urgent = daysLeft <= 3 && wo.status !== 'Complete' && wo.status !== 'Cancelled';
+    return `<tr ${urgent ? 'style="background:rgba(239,68,68,0.1)"' : ''}>
+      <td><strong><a href="/workorder/${wo.wo_id}" style="color:var(--accent-blue)">${wo.wo_id}</a></strong></td>
+      <td>${wo.product_id}</td>
+      <td>${wo.product_desc || wo.family || ''}</td>
+      <td class="number">${fmt(wo.order_qty_kft, 1)}</td>
+      <td class="number">${wo.priority}</td>
+      <td>${wo.due_date || '-'} ${urgent ? '<span style="color:#ef4444;font-size:11px">('+daysLeft+'d)</span>' : ''}</td>
+      <td>${wo.business_unit || '-'}</td>
+      <td><span class="badge badge-${color}">${wo.status}</span></td>
+      <td>${wo.status !== 'Complete' && wo.status !== 'Cancelled' ? statusButtons(wo) : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function statusButtons(wo) {
+  const transitions = {
+    'Pending': ['Released'],
+    'Released': ['InProcess', 'Cancelled'],
+    'InProcess': ['QCHold', 'Complete'],
+    'QCHold': ['InProcess', 'Complete'],
+  };
+  const next = transitions[wo.status] || [];
+  return next.map(s => {
+    const c = statusColors[s] || 'blue';
+    return `<button class="btn" style="padding:2px 8px;font-size:11px;background:var(--bg-secondary);color:var(--text-secondary);border:1px solid var(--border-color)" onclick="updateStatus('${wo.wo_id}','${s}')">${s}</button>`;
+  }).join(' ');
+}
+
+async function updateStatus(woId, newStatus) {
+  await apiPost('/api/workorders/update_status', {wo_id: woId, status: newStatus});
+  showToast(`${woId} → ${newStatus}`, 'success');
+  loadWOs();
+}
+
+function showCreateForm() {
+  document.getElementById('createForm').style.display = 'block';
+  loadProducts();
+}
+
+function hideCreateForm() {
+  document.getElementById('createForm').style.display = 'none';
+}
+
+async function loadProducts() {
+  const sel = document.getElementById('newProduct');
+  if (sel.options.length > 1) return; // Already loaded
+  try {
+    const data = await apiFetch('/api/mrp/products');
+    const products = data.products || data;
+    if (Array.isArray(products)) {
+      products.forEach(p => {
+        const opt = document.createElement('option');
+        const id = p.id || p.product_id;
+        const name = p.name || id;
+        opt.value = id;
+        opt.textContent = `${id} — ${name}`;
+        sel.appendChild(opt);
+      });
+    }
+  } catch(e) {
+    // Fallback: load from WO list
+    const wos = await apiFetch('/api/workorders/list');
+    const woList = Array.isArray(wos) ? wos : (wos.data || []);
+    const seen = new Set();
+    woList.forEach(wo => {
+      if (!seen.has(wo.product_id)) {
+        seen.add(wo.product_id);
+        const opt = document.createElement('option');
+        opt.value = wo.product_id;
+        opt.textContent = wo.product_id;
+        sel.appendChild(opt);
+      }
+    });
+  }
+}
+
+async function createWO() {
+  const product = document.getElementById('newProduct').value;
+  const qty = parseFloat(document.getElementById('newQty').value);
+  const priority = parseInt(document.getElementById('newPriority').value);
+  const bu = document.getElementById('newBU').value;
+  const due = document.getElementById('newDueDate').value;
+
+  if (!product) { showToast('Select a product', 'error'); return; }
+  if (!qty || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
+
+  const result = await apiPost('/api/workorders/create', {
+    product_id: product,
+    order_qty_kft: qty,
+    priority: priority,
+    business_unit: bu,
+    due_date: due,
+  });
+
+  if (result.ok) {
+    showToast(`Work Order ${result.wo_id} created!`, 'success');
+    hideCreateForm();
+    loadWOs();
+  } else {
+    showToast('Failed to create WO: ' + (result.error || ''), 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadWOs);
+</script>{% endblock %}

@@ -1,0 +1,229 @@
+{% extends "base.html" %}{% set active_page = "oee" %}
+{% block title %}OEE Drill-Down — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">OEE Drill-Down Dashboard</h1>
+<p class="page-subtitle">Overall Equipment Effectiveness = Availability x Performance x Quality — Filter by work center, date, shift, product family</p>
+
+<div class="control-panel"><div class="control-row">
+ <div class="control-group"><label>Work Center</label>
+  <select id="wcFilter" onchange="loadOEE()"><option value="">All Work Centers (Plant)</option></select>
+ </div>
+ <div class="control-group"><label>Date From</label>
+  <input type="date" id="dateFrom" onchange="loadOEE()">
+ </div>
+ <div class="control-group"><label>Date To</label>
+  <input type="date" id="dateTo" onchange="loadOEE()">
+ </div>
+ <div class="control-group"><label>Shift</label>
+  <select id="shiftFilter" onchange="loadOEE()"><option value="">All Shifts</option><option>Day</option><option>Swing</option><option>Night</option></select>
+ </div>
+ <div class="control-group"><label>Product Family</label>
+  <select id="familyFilter" onchange="loadOEE()"><option value="">All Families</option></select>
+ </div>
+ <button class="btn btn-primary" onclick="resetFilters()">Reset</button>
+ <a id="exportLink" href="/api/oee/export" class="btn-export" title="Export filtered data to CSV">Export CSV</a>
+</div></div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+ <div class="kpi-card blue" id="kpi-oee-main"><div class="kpi-label">Overall OEE</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 85% (World Class)</div></div>
+ <div class="kpi-card blue" id="kpi-avail"><div class="kpi-label">Availability (A)</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Planned - Downtime</div></div>
+ <div class="kpi-card blue" id="kpi-perf"><div class="kpi-label">Performance (P)</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Actual / Rated Output</div></div>
+ <div class="kpi-card blue" id="kpi-qual"><div class="kpi-label">Quality (Q)</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Good / Total</div></div>
+ <div class="kpi-card blue" id="kpi-output"><div class="kpi-label">Total Output</div><div class="kpi-value">--</div><span class="kpi-unit">ft</span><div class="kpi-target">All filtered shifts</div></div>
+ <div class="kpi-card blue" id="kpi-reports"><div class="kpi-label">Shift Reports</div><div class="kpi-value">--</div><span class="kpi-unit">shifts</span><div class="kpi-target">Filtered count</div></div>
+</div>
+
+<div class="chart-grid">
+ <!-- OEE Waterfall -->
+ <div class="chart-card"><h3>OEE Waterfall — A x P x Q Breakdown</h3><div class="chart-container"><canvas id="waterfallChart"></canvas></div></div>
+ <!-- 6 Big Losses -->
+ <div class="chart-card"><h3>6 Big Losses (Downtime Pareto)</h3><div class="chart-container"><canvas id="lossesChart"></canvas></div></div>
+ <!-- OEE Trend -->
+ <div class="chart-card" style="grid-column: span 2"><h3>OEE Trend Over Time (Daily Average)</h3><div class="chart-container"><canvas id="trendChart"></canvas></div></div>
+ <!-- OEE by Work Center comparison -->
+ <div class="chart-card" style="grid-column: span 2"><h3>OEE Comparison by Work Center</h3><div class="chart-container"><canvas id="wcCompareChart"></canvas></div></div>
+</div>
+
+<!-- Shift Reports Table -->
+<div class="chart-card">
+ <h3>Shift Reports Detail (<span id="reportCount">0</span> records)</h3>
+ <div style="max-height:400px;overflow-y:auto">
+  <table class="data-table" id="reportTable">
+   <thead><tr><th>Date</th><th>Shift</th><th>Work Center</th><th>A %</th><th>P %</th><th>Q %</th><th>OEE %</th><th>Output (ft)</th><th>Scrap (ft)</th><th>Downtime (min)</th></tr></thead>
+   <tbody></tbody>
+  </table>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+let waterfallChart, lossesChart, trendChart, wcCompareChart;
+
+async function initFilters() {
+  // Load work centers
+  const wcs = await apiFetch('/api/oee/work_centers');
+  const wcSel = document.getElementById('wcFilter');
+  wcs.forEach(wc => {
+    const o = document.createElement('option');
+    o.value = wc.wc_id;
+    o.textContent = `${wc.wc_id} — ${wc.name}`;
+    wcSel.appendChild(o);
+  });
+
+  // Load product families
+  const families = await apiFetch('/api/oee/families');
+  const famSel = document.getElementById('familyFilter');
+  const famNames = {A:'Shielded Instr',B:'Armored Control',C:'DHT',D:'Down Hole',I:'Insulated',M:'Medium Voltage',R:'Utility/Wire',S:'Shipboard',U:'Fire-Rated'};
+  families.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f;
+    o.textContent = `${f} — ${famNames[f] || f}`;
+    famSel.appendChild(o);
+  });
+
+  // Set date range
+  const range = await apiFetch('/api/oee/date_range');
+  if (range.min_date) document.getElementById('dateFrom').value = range.min_date;
+  if (range.max_date) document.getElementById('dateTo').value = range.max_date;
+
+  loadOEE();
+}
+
+function getFilterQS() {
+  const wc = document.getElementById('wcFilter').value;
+  const shift = document.getElementById('shiftFilter').value;
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  const family = document.getElementById('familyFilter').value;
+  let qs = '?';
+  if (wc) qs += `wc_id=${wc}&`;
+  if (shift) qs += `shift=${shift}&`;
+  if (from) qs += `date_from=${from}&`;
+  if (to) qs += `date_to=${to}&`;
+  if (family) qs += `family=${family}&`;
+  // Update export link with current filters
+  const el = document.getElementById('exportLink');
+  if (el) el.href = '/api/oee/export' + qs;
+  return qs;
+}
+
+function resetFilters() {
+  document.getElementById('wcFilter').value = '';
+  document.getElementById('shiftFilter').value = '';
+  document.getElementById('familyFilter').value = '';
+  // Keep date range as-is
+  loadOEE();
+}
+
+async function loadOEE() {
+  const qs = getFilterQS();
+
+  // Summary KPIs
+  const s = await apiFetch('/api/oee/summary' + qs);
+  setVal('kpi-oee-main', s.oee, s.oee >= 85 ? 'green' : s.oee >= 60 ? 'yellow' : 'red');
+  setVal('kpi-avail', s.availability, s.availability >= 90 ? 'green' : s.availability >= 80 ? 'yellow' : 'red');
+  setVal('kpi-perf', s.performance, s.performance >= 90 ? 'green' : s.performance >= 80 ? 'yellow' : 'red');
+  setVal('kpi-qual', s.quality, s.quality >= 97 ? 'green' : s.quality >= 95 ? 'yellow' : 'red');
+  setVal('kpi-output', fmt(s.total_output_ft), 'blue');
+  setVal('kpi-reports', s.count, 'blue');
+  document.getElementById('reportCount').textContent = s.count;
+
+  // Waterfall
+  if (waterfallChart) waterfallChart.destroy();
+  const availLoss = -(100 - s.availability);
+  const perfLoss = -(s.availability/100) * (100 - s.performance);
+  const qualLoss = -(s.availability * s.performance / 10000) * (100 - s.quality);
+  waterfallChart = new Chart(document.getElementById('waterfallChart'), {
+    type: 'bar', data: {
+      labels: ['Planned Time', 'Availability Loss', 'Performance Loss', 'Quality Loss', 'OEE'],
+      datasets: [{
+        data: [100, availLoss, perfLoss, qualLoss, s.oee],
+        backgroundColor: ['#3b82f6', '#ef4444', '#f59e0b', '#eab308', s.oee >= 85 ? '#22c55e' : s.oee >= 60 ? '#f59e0b' : '#ef4444']
+      }]
+    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { title: { display: true, text: '%' }, suggestedMin: -30, suggestedMax: 110 } } }
+  });
+
+  // 6 Big Losses
+  const losses = await apiFetch('/api/oee/losses' + qs);
+  if (lossesChart) lossesChart.destroy();
+  const lossColors = {Breakdown:'#ef4444',Setup:'#f59e0b',MaterialWait:'#eab308',QualityHold:'#8b5cf6',PM:'#3b82f6',NoOrders:'#64748b',Other:'#475569'};
+  if (losses.length) {
+    lossesChart = new Chart(document.getElementById('lossesChart'), {
+      type: 'bar', data: {
+        labels: losses.map(l => l.category),
+        datasets: [{ label: 'Minutes', data: losses.map(l => l.total_min),
+          backgroundColor: losses.map(l => lossColors[l.category] || '#64748b') }]
+      }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { title: { display: true, text: 'Total Minutes' } } } }
+    });
+  }
+
+  // OEE Trend
+  const trend = await apiFetch('/api/oee/trend' + qs);
+  if (trendChart) trendChart.destroy();
+  if (trend.length) {
+    trendChart = new Chart(document.getElementById('trendChart'), {
+      type: 'line', data: {
+        labels: trend.map(t => t.shift_date),
+        datasets: [
+          { label: 'OEE %', data: trend.map(t => (t.avg_oee * 100).toFixed(1)), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3 },
+          { label: 'Availability', data: trend.map(t => (t.avg_a * 100).toFixed(1)), borderColor: '#22c55e', borderDash: [3,3], tension: 0.3, pointRadius: 0 },
+          { label: 'Performance', data: trend.map(t => (t.avg_p * 100).toFixed(1)), borderColor: '#f59e0b', borderDash: [3,3], tension: 0.3, pointRadius: 0 },
+          { label: 'Quality', data: trend.map(t => (t.avg_q * 100).toFixed(1)), borderColor: '#8b5cf6', borderDash: [3,3], tension: 0.3, pointRadius: 0 },
+        ]
+      }, options: { responsive: true, maintainAspectRatio: false,
+        scales: { y: { min: 50, max: 100, title: { display: true, text: '%' } } },
+        plugins: { annotation: { annotations: { target: { type: 'line', yMin: 85, yMax: 85, borderColor: '#22c55e', borderDash: [5,5], borderWidth: 2,
+          label: { display: true, content: 'World Class 85%', position: 'start', backgroundColor: 'rgba(34,197,94,0.8)' } } } } } }
+    });
+  }
+
+  // WC Comparison
+  const wcData = await apiFetch('/api/oee/by_wc' + qs);
+  if (wcCompareChart) wcCompareChart.destroy();
+  if (wcData.length) {
+    wcCompareChart = new Chart(document.getElementById('wcCompareChart'), {
+      type: 'bar', data: {
+        labels: wcData.map(w => w.wc_id),
+        datasets: [
+          { label: 'Availability', data: wcData.map(w => (w.avg_a * 100).toFixed(1)), backgroundColor: '#3b82f6' },
+          { label: 'Performance', data: wcData.map(w => (w.avg_p * 100).toFixed(1)), backgroundColor: '#f59e0b' },
+          { label: 'Quality', data: wcData.map(w => (w.avg_q * 100).toFixed(1)), backgroundColor: '#22c55e' },
+        ]
+      }, options: { responsive: true, maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } } },
+        plugins: { annotation: { annotations: { target: { type: 'line', yMin: 85, yMax: 85, borderColor: '#ef4444', borderDash: [5,5], borderWidth: 1 } } } } }
+    });
+  }
+
+  // Shift Reports Table
+  const tbody = document.querySelector('#reportTable tbody');
+  tbody.innerHTML = (s.reports || []).map(r => {
+    const oeeColor = r.oee_overall >= 0.85 ? 'badge-green' : r.oee_overall >= 0.60 ? 'badge-yellow' : 'badge-red';
+    return `<tr>
+      <td>${r.shift_date}</td><td>${r.shift_code}</td><td>${r.wc_id}</td>
+      <td class="number">${(r.oee_availability*100).toFixed(1)}</td>
+      <td class="number">${(r.oee_performance*100).toFixed(1)}</td>
+      <td class="number">${(r.oee_quality*100).toFixed(1)}</td>
+      <td class="number"><span class="badge ${oeeColor}">${(r.oee_overall*100).toFixed(1)}%</span></td>
+      <td class="number">${fmt(r.total_output_ft)}</td>
+      <td class="number">${fmt(r.total_scrap_ft)}</td>
+      <td class="number">${r.total_downtime_min}</td>
+    </tr>`;
+  }).join('');
+
+  updateTimestamp();
+}
+
+function setVal(id, value, color) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.querySelector('.kpi-value').textContent = value;
+  card.className = 'kpi-card ' + color;
+}
+
+document.addEventListener('DOMContentLoaded', initFilters);
+</script>{% endblock %}

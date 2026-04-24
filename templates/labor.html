@@ -1,0 +1,579 @@
+{% extends "base.html" %}
+{% set active_page = "labor" %}
+{% block title %}F6 Labor — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F6 — Labor Management & Tracking</h1>
+<p class="page-subtitle">Personnel certifications, shift scheduling, labor hours, and handoffs</p>
+
+<div class="tab-bar" data-group="labor">
+  <button class="tab-btn active" data-tab="tab-hours">Labor Hours</button>
+  <button class="tab-btn" data-tab="tab-workforce">Workforce &amp; Certs</button>
+  <button class="tab-btn" data-tab="tab-handoff-whatif">Shift Handoff &amp; What-If</button>
+</div>
+
+<!-- ====== Tab 1: Labor Hours (now first) ====== -->
+<div class="tab-content active" id="tab-hours">
+  <h2>Labor Hours by Type</h2>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Hours by Labor Type</h3>
+      <div class="chart-container"><canvas id="laborChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Labor Summary</h3>
+      <table class="data-table" id="hoursTable">
+        <thead><tr><th>Labor Type</th><th>Total Hours</th><th>% of Total</th></tr></thead>
+        <tbody><tr><td colspan="3">Loading...</td></tr></tbody>
+      </table>
+      <div style="margin-top:12px;padding:8px;background:#1e293b;border-radius:6px">
+        <strong>Labor Efficiency (Earned / Actual):</strong> <span id="efficiencyValue">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Tab 2: Workforce & Certs (with filters + cross-training) ====== -->
+<div class="tab-content" id="tab-workforce">
+
+  <div class="kpi-grid">
+    <div class="kpi-card"><h3>Headcount</h3><p id="kpiHead">—</p></div>
+    <div class="kpi-card"><h3>Active Certs</h3><p id="kpiCert">—</p></div>
+    <div class="kpi-card"><h3>Expiring (30d)</h3><p id="kpiExpiring" style="color:#eab308">—</p></div>
+    <div class="kpi-card"><h3>Avg Flexibility Index</h3><p id="kpiFlexibility">—</p></div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="control-panel" style="margin-bottom:12px">
+    <div class="control-row">
+      <div class="control-group"><label>Name</label>
+        <input type="text" id="filterName" placeholder="Search name..." oninput="applyFilters()" style="width:140px"></div>
+      <div class="control-group"><label>Role</label>
+        <select id="filterRole" onchange="applyFilters()"><option value="">All Roles</option></select></div>
+      <div class="control-group"><label>Shift</label>
+        <select id="filterShift" onchange="applyFilters()"><option value="">All Shifts</option><option>Day</option><option>Swing</option><option>Night</option></select></div>
+      <div class="control-group"><label>Work Center</label>
+        <select id="filterWC" onchange="applyFilters()"><option value="">All WCs</option></select></div>
+      <div class="control-group"><label>Cert Status</label>
+        <select id="filterCertStatus" onchange="applyFilters()"><option value="">All</option><option value="Active">Active</option><option value="Expiring">Expiring Soon</option><option value="Expired">Expired</option><option value="NoCert">No Certs</option></select></div>
+      <button class="btn" onclick="clearFilters()" style="margin-top:18px">Clear</button>
+    </div>
+  </div>
+
+  <!-- Personnel Roster -->
+  <h2>Personnel Roster <span id="personnelCount" style="font-size:13px;color:var(--text-muted);font-weight:400"></span></h2>
+  <table class="data-table" id="personnelTable">
+    <thead><tr><th>Name</th><th>Role</th><th>Shift</th><th>Department</th><th>Certs</th><th>Flexibility</th></tr></thead>
+    <tbody><tr><td colspan="6">Loading...</td></tr></tbody>
+  </table>
+
+  <!-- Cross-Training Coverage Matrix -->
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Cross-Training Coverage <span style="font-weight:400;text-transform:none;letter-spacing:0">(certified operators per work center)</span></div>
+  <div id="crossTrainGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:16px"></div>
+
+  <!-- Certification Matrix -->
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Certification Detail <span id="certCount" style="font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+  <table class="data-table" id="certTable">
+    <thead><tr><th>Employee</th><th>Work Center</th><th>Cert Type</th><th>Level</th><th>Expiry</th><th>Days Left</th><th>Status</th></tr></thead>
+    <tbody><tr><td colspan="7">Loading...</td></tr></tbody>
+  </table>
+
+  <!-- Shift Schedule -->
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Today's Shift Schedule</div>
+  <table class="data-table" id="scheduleTable">
+    <thead><tr><th>Employee</th><th>Shift</th><th>Work Center</th><th>Date</th><th>Role</th></tr></thead>
+    <tbody><tr><td colspan="5">Loading...</td></tr></tbody>
+  </table>
+
+</div>
+
+<!-- ====== Tab 3: Shift Handoff & What-If (merged) ====== -->
+<div class="tab-content" id="tab-handoff-whatif">
+
+  <h2>Shift Handoff</h2>
+  <div class="control-panel">
+    <h3 style="margin-bottom:12px;color:var(--accent-blue)">New Handoff</h3>
+    <div class="control-row">
+      <div class="control-group"><label>From Shift</label>
+        <select id="hoFromShift"><option>Day</option><option>Swing</option><option>Night</option></select></div>
+      <div class="control-group"><label>To Shift</label>
+        <select id="hoToShift"><option>Swing</option><option>Night</option><option>Day</option></select></div>
+      <div class="control-group"><label>Date</label>
+        <input type="date" id="hoDate"></div>
+      <div class="control-group"><label>From Operator</label>
+        <input type="text" id="hoFromOp" placeholder="EMP-001"></div>
+      <div class="control-group"><label>To Operator</label>
+        <input type="text" id="hoToOp" placeholder="EMP-013"></div>
+    </div>
+    <div class="control-row" style="margin-top:8px">
+      <div class="control-group" style="flex:1"><label>Machines Running</label>
+        <input type="text" id="hoMachines" placeholder="CV-1, DRAW-1, CABLE-1"></div>
+      <div class="control-group" style="flex:1"><label>WOs In Progress</label>
+        <input type="text" id="hoWOs" placeholder="WO-2026-002, WO-2026-005"></div>
+    </div>
+    <div class="control-row" style="margin-top:8px">
+      <div class="control-group" style="flex:1"><label>Quality Issues</label>
+        <input type="text" id="hoQuality" placeholder="None"></div>
+      <div class="control-group" style="flex:1"><label>Safety Alerts</label>
+        <input type="text" id="hoSafety" placeholder="None"></div>
+    </div>
+    <div class="control-row" style="margin-top:8px">
+      <div class="control-group" style="flex:2"><label>Notes</label>
+        <input type="text" id="hoNotes" placeholder="Additional notes..."></div>
+      <button class="btn btn-primary" onclick="submitHandoff()">Submit Handoff</button>
+    </div>
+  </div>
+
+  <h3 style="margin-top:16px">Recent Handoffs</h3>
+  <table class="data-table" id="handoffTable">
+    <thead><tr><th>Date</th><th>From→To</th><th>From Op</th><th>To Op</th><th>Machines</th><th>Quality Issues</th><th>Safety</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody><tr><td colspan="9">Loading...</td></tr></tbody>
+  </table>
+
+  <!-- Divider -->
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Rostering What-If Analysis</div>
+
+  <p class="page-subtitle">Explore workforce scenarios: callouts, cross-training, overtime costs</p>
+  <div class="control-panel">
+    <div class="control-row">
+      <div class="control-group"><label>Scenario</label>
+        <select id="wifScenario">
+          <option value="callout">Callout (operators unavailable)</option>
+          <option value="cross_train">Cross-Training Impact</option>
+          <option value="overtime">Overtime Analysis</option>
+          <option value="fatigue">Night Shift Fatigue Analysis</option>
+          <option value="training_pipeline">Training Pipeline Planning</option>
+        </select></div>
+      <div class="control-group"><label>Shift</label>
+        <select id="wifShift"><option>Day</option><option>Swing</option><option>Night</option></select></div>
+      <div class="control-group"><label>Count</label>
+        <input type="number" id="wifCount" value="3" min="1" max="10" style="width:80px"></div>
+      <div class="control-group"><label>Target WC (cross-train)</label>
+        <input type="text" id="wifWC" value="DRAW-1" style="width:120px"></div>
+      <button class="btn btn-primary" onclick="runWhatIf()">Run Scenario</button>
+    </div>
+  </div>
+  <div id="wifResult" style="display:none">
+    <div class="kpi-grid" id="wifKPIs"></div>
+    <div class="chart-card" style="margin-top:12px">
+      <h3 id="wifTitle">Results</h3>
+      <p id="wifRecommendation" style="color:var(--accent-gold);font-weight:600;margin-bottom:12px"></p>
+      <table class="data-table" id="wifTable">
+        <thead id="wifTableHead"></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// --- Data stores for filtering ---
+let allPersonnel = [];
+let allCerts = [];
+let certsByPerson = {};
+
+async function loadPersonnel() {
+  try {
+    const data = await apiFetch('/api/labor/personnel');
+    allPersonnel = Array.isArray(data) ? data : (data.personnel || []);
+    document.getElementById('kpiHead').textContent = fmt(allPersonnel.length);
+
+    // Populate role filter dropdown
+    const roles = [...new Set(allPersonnel.map(r => r.role).filter(Boolean))].sort();
+    const roleSelect = document.getElementById('filterRole');
+    roles.forEach(role => {
+      const opt = document.createElement('option');
+      opt.value = role; opt.textContent = role;
+      roleSelect.appendChild(opt);
+    });
+
+    renderPersonnel(allPersonnel);
+  } catch(e) { console.error('Personnel error:', e); }
+}
+
+function renderPersonnel(rows) {
+  const tb = document.getElementById('personnelTable').querySelector('tbody');
+  document.getElementById('personnelCount').textContent = `(${rows.length} shown)`;
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="6">No personnel match filters</td></tr>'; return; }
+
+  // Count certs per person and compute flexibility
+  const totalWCs = new Set(allCerts.map(c => c.wc_id).filter(Boolean)).size || 1;
+
+  tb.innerHTML = rows.map(r => {
+    const pid = r.person_id;
+    const personCerts = certsByPerson[pid] || [];
+    const activeCerts = personCerts.filter(c => c.certStatus === 'Active' || c.certStatus === 'Expiring Soon');
+    const uniqueWCs = new Set(activeCerts.map(c => c.wc_id).filter(Boolean)).size;
+    const flexibility = (uniqueWCs / totalWCs * 100).toFixed(0);
+    const flexColor = flexibility >= 30 ? '#22c55e' : flexibility >= 15 ? '#eab308' : '#ef4444';
+    const certBadges = activeCerts.slice(0, 4).map(c =>
+      `<span class="badge" style="background:${c.certStatus==='Expiring Soon'?'#eab308':'#334155'};font-size:9px;padding:1px 5px;margin:1px">${c.wc_id || c.certification_type}</span>`
+    ).join('') + (activeCerts.length > 4 ? `<span style="font-size:10px;color:var(--text-muted)">+${activeCerts.length-4}</span>` : '');
+    return `<tr>
+      <td><strong>${r.employee_name || r.name || ''}</strong></td>
+      <td>${r.role || ''}</td>
+      <td>${r.shift || ''}</td>
+      <td>${r.department || ''}</td>
+      <td>${certBadges || '<span style="color:#64748b">None</span>'}</td>
+      <td><span style="color:${flexColor};font-weight:600">${flexibility}%</span> <span style="font-size:10px;color:var(--text-muted)">(${uniqueWCs} WCs)</span></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadCerts() {
+  try {
+    const data = await apiFetch('/api/labor/cert_matrix');
+    allCerts = Array.isArray(data) ? data : (data.certs || []);
+    let active = 0, expiring = 0;
+    const today = new Date();
+    const soon = new Date(); soon.setDate(soon.getDate() + 30);
+
+    // Populate WC filter dropdown
+    const wcs = [...new Set(allCerts.map(r => r.wc_id).filter(Boolean))].sort();
+    const wcSelect = document.getElementById('filterWC');
+    wcs.forEach(wc => {
+      const opt = document.createElement('option');
+      opt.value = wc; opt.textContent = wc;
+      wcSelect.appendChild(opt);
+    });
+
+    // Compute status and build lookup
+    certsByPerson = {};
+    allCerts.forEach(r => {
+      let status = 'Active', color = '#22c55e', daysLeft = null;
+      if (r.expiry_date) {
+        const exp = new Date(r.expiry_date);
+        daysLeft = Math.floor((exp - today) / 86400000);
+        if (exp < today) { status = 'Expired'; color = '#ef4444'; }
+        else if (exp < soon) { status = 'Expiring Soon'; color = '#eab308'; expiring++; active++; }
+        else { active++; }
+      } else { active++; daysLeft = '∞'; }
+      r.certStatus = status;
+      r.certColor = color;
+      r.daysLeft = daysLeft;
+      if (!certsByPerson[r.person_id]) certsByPerson[r.person_id] = [];
+      certsByPerson[r.person_id].push(r);
+    });
+
+    document.getElementById('kpiCert').textContent = fmt(active);
+    document.getElementById('kpiExpiring').textContent = fmt(expiring);
+
+    // Compute avg flexibility index
+    const totalWCs = wcs.length || 1;
+    let totalFlex = 0;
+    allPersonnel.forEach(p => {
+      const pc = certsByPerson[p.person_id] || [];
+      const uwc = new Set(pc.filter(c => c.certStatus !== 'Expired').map(c => c.wc_id).filter(Boolean)).size;
+      totalFlex += uwc / totalWCs;
+    });
+    const avgFlex = allPersonnel.length > 0 ? (totalFlex / allPersonnel.length * 100).toFixed(1) : 0;
+    document.getElementById('kpiFlexibility').textContent = avgFlex + '%';
+
+    renderCerts(allCerts);
+    buildCrossTrainGrid();
+  } catch(e) { console.error('Certs error:', e); }
+}
+
+function renderCerts(rows) {
+  const tb = document.getElementById('certTable').querySelector('tbody');
+  document.getElementById('certCount').textContent = `(${rows.length} certs)`;
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="7">No certifications match filters</td></tr>'; return; }
+  tb.innerHTML = rows.map(r => {
+    const daysStr = typeof r.daysLeft === 'number' ? r.daysLeft + 'd' : r.daysLeft || '—';
+    return `<tr>
+      <td>${r.employee_name || ''}</td>
+      <td>${r.wc_id || ''}</td>
+      <td>${r.certification_type || ''}</td>
+      <td>${r.cert_level || ''}</td>
+      <td>${r.expiry_date || '—'}</td>
+      <td style="color:${r.certColor}">${daysStr}</td>
+      <td><span class="badge" style="background:${r.certColor};color:#fff;padding:2px 8px;border-radius:4px">${r.certStatus}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function buildCrossTrainGrid() {
+  // Count certified operators per WC
+  const wcCounts = {};
+  allCerts.forEach(c => {
+    if (c.wc_id && c.certStatus !== 'Expired') {
+      if (!wcCounts[c.wc_id]) wcCounts[c.wc_id] = new Set();
+      wcCounts[c.wc_id].add(c.person_id);
+    }
+  });
+  const grid = document.getElementById('crossTrainGrid');
+  const sorted = Object.entries(wcCounts).sort((a, b) => a[1].size - b[1].size);
+  grid.innerHTML = sorted.map(([wc, pids]) => {
+    const count = pids.size;
+    const bg = count <= 1 ? '#7f1d1d' : count <= 2 ? '#78350f' : count <= 4 ? '#1e3a5f' : '#14532d';
+    const border = count <= 1 ? '#ef4444' : count <= 2 ? '#eab308' : count <= 4 ? '#3b82f6' : '#22c55e';
+    const label = count <= 1 ? 'CRITICAL' : count <= 2 ? 'AT RISK' : count <= 4 ? 'ADEQUATE' : 'STRONG';
+    return `<div style="background:${bg};border:1px solid ${border};border-radius:6px;padding:8px 10px;text-align:center">
+      <div style="font-size:10px;color:#94a3b8;letter-spacing:1px">${wc}</div>
+      <div style="font-size:22px;font-weight:700;color:${border}">${count}</div>
+      <div style="font-size:9px;color:${border}">${label}</div>
+    </div>`;
+  }).join('');
+}
+
+function applyFilters() {
+  const nameF = (document.getElementById('filterName').value || '').toLowerCase();
+  const roleF = document.getElementById('filterRole').value;
+  const shiftF = document.getElementById('filterShift').value;
+  const wcF = document.getElementById('filterWC').value;
+  const certStatusF = document.getElementById('filterCertStatus').value;
+
+  // Filter personnel
+  let filteredP = allPersonnel.filter(p => {
+    if (nameF && !(p.employee_name || '').toLowerCase().includes(nameF)) return false;
+    if (roleF && p.role !== roleF) return false;
+    if (shiftF && p.shift !== shiftF) return false;
+    if (wcF) {
+      const pc = certsByPerson[p.person_id] || [];
+      if (!pc.some(c => c.wc_id === wcF)) return false;
+    }
+    if (certStatusF) {
+      const pc = certsByPerson[p.person_id] || [];
+      if (certStatusF === 'NoCert' && pc.length > 0) return false;
+      if (certStatusF === 'Active' && !pc.some(c => c.certStatus === 'Active')) return false;
+      if (certStatusF === 'Expiring' && !pc.some(c => c.certStatus === 'Expiring Soon')) return false;
+      if (certStatusF === 'Expired' && !pc.some(c => c.certStatus === 'Expired')) return false;
+    }
+    return true;
+  });
+  renderPersonnel(filteredP);
+
+  // Filter certs
+  const filteredPids = new Set(filteredP.map(p => p.person_id));
+  let filteredC = allCerts.filter(c => {
+    if (!filteredPids.has(c.person_id)) return false;
+    if (wcF && c.wc_id !== wcF) return false;
+    if (certStatusF && certStatusF !== 'NoCert') {
+      if (certStatusF === 'Active' && c.certStatus !== 'Active') return false;
+      if (certStatusF === 'Expiring' && c.certStatus !== 'Expiring Soon') return false;
+      if (certStatusF === 'Expired' && c.certStatus !== 'Expired') return false;
+    }
+    return true;
+  });
+  renderCerts(filteredC);
+}
+
+function clearFilters() {
+  document.getElementById('filterName').value = '';
+  document.getElementById('filterRole').value = '';
+  document.getElementById('filterShift').value = '';
+  document.getElementById('filterWC').value = '';
+  document.getElementById('filterCertStatus').value = '';
+  renderPersonnel(allPersonnel);
+  renderCerts(allCerts);
+}
+
+async function loadSchedule() {
+  try {
+    const data = await apiFetch('/api/labor/schedule');
+    const rows = Array.isArray(data) ? data : (data.schedule || []);
+    const tb = document.getElementById('scheduleTable').querySelector('tbody');
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="5">No schedule entries</td></tr>'; return; }
+    tb.innerHTML = rows.map(r => `<tr>
+      <td>${r.employee_name || ''}</td>
+      <td>${r.shift || r.shift_code || ''}</td>
+      <td>${r.wc_id || ''}</td>
+      <td>${r.schedule_date || r.shift_date || ''}</td>
+      <td>${r.role || ''}</td>
+    </tr>`).join('');
+  } catch(e) { console.error('Schedule error:', e); }
+}
+
+async function loadHours() {
+  try {
+    const data = await apiFetch('/api/labor/hours');
+    const summary = data.summary || [];
+    const efficiency = data.efficiency;
+    const tb = document.getElementById('hoursTable').querySelector('tbody');
+    if (!summary.length) { tb.innerHTML = '<tr><td colspan="3">No labor data</td></tr>'; return; }
+    const totalHrs = summary.reduce((s, r) => s + (r.total_hours || 0), 0);
+    tb.innerHTML = summary.map(r => `<tr>
+      <td>${r.labor_type || ''}</td>
+      <td>${fmt(r.total_hours || 0, 1)}</td>
+      <td>${totalHrs ? ((r.total_hours / totalHrs) * 100).toFixed(1) : 0}%</td>
+    </tr>`).join('');
+    document.getElementById('efficiencyValue').textContent =
+      efficiency != null ? (efficiency * 100).toFixed(1) + '%' : '—';
+    // Bar chart
+    if (typeof Chart !== 'undefined') {
+      const colors = {'Run':'#22c55e','Setup':'#3b82f6','Rework':'#ef4444','Idle':'#94a3b8','PM':'#eab308'};
+      new Chart(document.getElementById('laborChart'), {
+        type: 'bar',
+        data: {
+          labels: summary.map(r => r.labor_type),
+          datasets: [{
+            label: 'Hours', data: summary.map(r => r.total_hours),
+            backgroundColor: summary.map(r => colors[r.labor_type] || '#6366f1')
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true, title: { display: true, text: 'Hours' } } } }
+      });
+    }
+  } catch(e) { console.error('Hours error:', e); }
+}
+
+async function loadHandoffs() {
+  try {
+    const data = await apiFetch('/api/labor/handoffs');
+    const rows = Array.isArray(data) ? data : (data.handoffs || []);
+    const tb = document.getElementById('handoffTable').querySelector('tbody');
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="9">No handoff records</td></tr>'; return; }
+    tb.innerHTML = rows.map(r => {
+      const qiColor = (r.quality_issues && r.quality_issues !== 'None') ? '#ef4444' : '#22c55e';
+      const saColor = (r.safety_alerts && r.safety_alerts !== 'None') ? '#ef4444' : '#22c55e';
+      const ackBtn = r.status === 'Pending'
+        ? `<button class="btn btn-success" style="padding:3px 8px;font-size:11px" onclick="ackHandoff(${r.handoff_id})">Acknowledge</button>`
+        : `<span class="badge badge-green">Done</span>`;
+      return `<tr>
+        <td>${r.handoff_date || ''}</td>
+        <td>${r.from_shift || ''}→${r.to_shift || ''}</td>
+        <td>${r.from_operator || ''}</td>
+        <td>${r.to_operator || ''}</td>
+        <td>${r.machines_running || ''}</td>
+        <td style="color:${qiColor};font-weight:bold">${r.quality_issues || 'None'}</td>
+        <td style="color:${saColor};font-weight:bold">${r.safety_alerts || 'None'}</td>
+        <td><span class="badge ${r.status==='Pending'?'badge-yellow':'badge-green'}">${r.status||''}</span></td>
+        <td>${ackBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('Handoffs error:', e); }
+}
+
+async function submitHandoff() {
+  const today = new Date().toISOString().split('T')[0];
+  const payload = {
+    from_shift: document.getElementById('hoFromShift').value,
+    to_shift: document.getElementById('hoToShift').value,
+    handoff_date: document.getElementById('hoDate').value || today,
+    from_operator: document.getElementById('hoFromOp').value,
+    to_operator: document.getElementById('hoToOp').value,
+    machines_running: document.getElementById('hoMachines').value,
+    wos_in_progress: document.getElementById('hoWOs').value,
+    quality_issues: document.getElementById('hoQuality').value || 'None',
+    safety_alerts: document.getElementById('hoSafety').value || 'None',
+    notes: document.getElementById('hoNotes').value,
+  };
+  try {
+    await apiPost('/api/labor/handoff/create', payload);
+    showToast('Handoff submitted successfully', 'success');
+    loadHandoffs();
+  } catch(e) { showToast('Failed to submit handoff', 'error'); }
+}
+
+async function ackHandoff(id) {
+  try {
+    await apiPost('/api/labor/handoff/acknowledge', { handoff_id: id });
+    showToast('Handoff acknowledged', 'success');
+    loadHandoffs();
+  } catch(e) { showToast('Failed to acknowledge', 'error'); }
+}
+
+async function runWhatIf() {
+  const scenario = document.getElementById('wifScenario').value;
+  const shift = document.getElementById('wifShift').value;
+  const count = parseInt(document.getElementById('wifCount').value);
+  const wc_id = document.getElementById('wifWC').value;
+  try {
+    const d = await apiPost('/api/labor/roster/what_if', { scenario, shift, count, wc_id });
+    document.getElementById('wifResult').style.display = 'block';
+    const kpis = document.getElementById('wifKPIs');
+    const rec = document.getElementById('wifRecommendation');
+    const title = document.getElementById('wifTitle');
+    const thead = document.getElementById('wifTableHead');
+    const tbody = document.getElementById('wifTable').querySelector('tbody');
+    rec.textContent = d.recommendation || '';
+
+    if (scenario === 'callout') {
+      title.textContent = `Callout Scenario: ${d.callouts} operators out on ${d.shift} shift`;
+      kpis.innerHTML = `
+        <div class="kpi-card blue"><div class="kpi-label">Total Operators</div><div class="kpi-value">${d.total_operators}</div></div>
+        <div class="kpi-card yellow"><div class="kpi-label">Remaining</div><div class="kpi-value">${d.remaining}</div></div>
+        <div class="kpi-card ${d.critical_wcs>0?'red':'green'}"><div class="kpi-label">Critical WCs</div><div class="kpi-value">${d.critical_wcs}</div></div>
+        <div class="kpi-card ${d.at_risk_wcs>0?'yellow':'green'}"><div class="kpi-label">At Risk WCs</div><div class="kpi-value">${d.at_risk_wcs}</div></div>`;
+      thead.innerHTML = '<tr><th>Work Center</th><th>Certified Now</th><th>After Callout</th><th>Status</th></tr>';
+      tbody.innerHTML = (d.wc_impact||[]).map(w => {
+        const badge = w.status === 'CRITICAL' ? 'badge-red' : w.status === 'AT RISK' ? 'badge-yellow' : 'badge-green';
+        return `<tr><td>${w.wc_id}</td><td>${w.current_certified}</td><td>${w.after_callout}</td><td><span class="badge ${badge}">${w.status}</span></td></tr>`;
+      }).join('');
+    } else if (scenario === 'cross_train') {
+      title.textContent = `Cross-Training: +${count} operators on ${d.target_wc}`;
+      kpis.innerHTML = `
+        <div class="kpi-card blue"><div class="kpi-label">Current Certified</div><div class="kpi-value">${d.current_certified}</div></div>
+        <div class="kpi-card green"><div class="kpi-label">After Training</div><div class="kpi-value">${d.after_training}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Training Hours</div><div class="kpi-value">${d.training_hours_est}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Training Cost</div><div class="kpi-value">$${fmt(d.training_cost_est)}</div></div>`;
+      thead.innerHTML = ''; tbody.innerHTML = '';
+    } else if (scenario === 'overtime') {
+      title.textContent = `Overtime Analysis for ${d.shift} shift`;
+      kpis.innerHTML = `
+        <div class="kpi-card yellow"><div class="kpi-label">WCs Needing Coverage</div><div class="kpi-value">${d.wcs_needing_coverage}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Daily OT Hours</div><div class="kpi-value">${d.overtime_hours_per_day}</div></div>
+        <div class="kpi-card red"><div class="kpi-label">Weekly OT Cost</div><div class="kpi-value">$${fmt(d.weekly_ot_cost)}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">vs Hiring (Annual)</div><div class="kpi-value">$${fmt(d.vs_hiring_annual)}</div></div>`;
+      thead.innerHTML = ''; tbody.innerHTML = '';
+    } else if (scenario === 'fatigue') {
+      title.textContent = `Night Shift Fatigue Analysis`;
+      kpis.innerHTML = `
+        <div class="kpi-card blue"><div class="kpi-label">Night Operators</div><div class="kpi-value">${d.total_night_operators}</div></div>
+        <div class="kpi-card ${d.high_risk_count>0?'red':'green'}"><div class="kpi-label">High Fatigue Risk</div><div class="kpi-value">${d.high_risk_count}</div></div>
+        <div class="kpi-card ${d.moderate_risk_count>0?'yellow':'green'}"><div class="kpi-label">Moderate Risk</div><div class="kpi-value">${d.moderate_risk_count}</div></div>
+        <div class="kpi-card green"><div class="kpi-label">Low Risk</div><div class="kpi-value">${d.total_night_operators - d.high_risk_count - d.moderate_risk_count}</div></div>`;
+      thead.innerHTML = '<tr><th>Employee</th><th>Consecutive Nights</th><th>Degradation</th><th>Effective Quality</th><th>Risk</th></tr>';
+      tbody.innerHTML = (d.operators||[]).map(o => {
+        const badge = o.risk_level === 'HIGH' ? 'badge-red' : o.risk_level === 'MODERATE' ? 'badge-yellow' : 'badge-green';
+        return `<tr><td>${o.employee_name}</td><td>${o.consecutive_nights}</td><td>-${o.degradation_pct}%</td><td>${o.effective_quality_pct}%</td><td><span class="badge ${badge}">${o.risk_level}</span></td></tr>`;
+      }).join('');
+    } else if (scenario === 'training_pipeline') {
+      title.textContent = `Training Pipeline Planning`;
+      kpis.innerHTML = `
+        <div class="kpi-card yellow"><div class="kpi-label">Gap Work Centers</div><div class="kpi-value">${d.gap_wcs}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Trainees Needed</div><div class="kpi-value">${d.total_trainees_needed}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Total Training Hrs</div><div class="kpi-value">${fmt(d.total_training_hours)}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Cost Estimate</div><div class="kpi-value">$${fmt(d.total_cost_estimate)}</div></div>`;
+      thead.innerHTML = '<tr><th>Work Center</th><th>Current</th><th>Needed</th><th>Hrs/Trainee</th><th>Weeks</th><th>Cost</th></tr>';
+      tbody.innerHTML = (d.pipeline||[]).map(p =>
+        `<tr><td>${p.wc_id} (${p.wc_name||''})</td><td>${p.current_certified}</td><td>+${p.trainees_needed}</td><td>${p.hours_per_trainee}</td><td>${p.weeks_to_qualified}</td><td>$${fmt(p.cost_estimate)}</td></tr>`
+      ).join('');
+      // Show stages
+      if (d.stages) {
+        tbody.innerHTML += `<tr><td colspan="6" style="color:var(--accent-gold);font-size:12px;padding-top:12px"><strong>Staged Progression:</strong> ${d.stages.join(' → ')}</td></tr>`;
+      }
+    }
+    showToast(`What-if scenario complete: ${scenario}`, 'success');
+  } catch(e) { showToast('Scenario failed: ' + e.message, 'error'); }
+}
+
+/* --- Lazy-load flags --- */
+let workforceLoaded = false;
+let handoffLoaded = false;
+
+/* Load Labor Hours immediately (default tab) */
+loadHours();
+
+/* Lazy-load Workforce and Handoff/What-If on first tab click */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute('data-tab');
+      if (tab === 'tab-workforce' && !workforceLoaded) {
+        workforceLoaded = true;
+        loadPersonnel();
+        loadCerts();
+        loadSchedule();
+      }
+      if (tab === 'tab-handoff-whatif' && !handoffLoaded) {
+        handoffLoaded = true;
+        loadHandoffs();
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

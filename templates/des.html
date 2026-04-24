@@ -1,0 +1,164 @@
+{% extends "base.html" %}{% set active_page = "des" %}
+{% block title %}DES Simulation — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Discrete-Event Simulation</h1>
+<p class="page-subtitle">SodhiCable factory model (25 WCs → 8 stages) — FIFO/SPT/EDD/WSPT dispatch — M/M/1, M/M/c, M/G/1 queueing</p>
+
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-des">Run Simulation</button>
+ <button class="tab-btn" data-tab="tab-queue">Queueing Analytics</button>
+</div>
+
+<!-- DES Simulation Tab -->
+<div class="tab-content active" id="tab-des">
+ <div class="control-panel"><div class="control-row">
+  <div class="control-group"><label>Arrival Rate (λ jobs/hr)</label>
+   <input type="range" id="arrivalRate" min="5" max="50" value="30" step="1" oninput="document.getElementById('arrVal').textContent=(this.value/100).toFixed(2)">
+   <span id="arrVal" style="color:var(--accent-gold);font-weight:700">0.30</span>
+  </div>
+  <div class="control-group"><label>Dispatch Rule</label>
+   <select id="dispatchRule"><option>FIFO</option><option>SPT</option><option>EDD</option><option>WSPT</option></select>
+  </div>
+  <div class="control-group"><label>Jobs</label>
+   <input type="number" id="numJobs" value="20" min="5" max="200" style="width:70px">
+  </div>
+  <div class="control-group"><label><input type="checkbox" id="breakdowns"> Breakdowns</label></div>
+  <button class="btn btn-primary" onclick="runDES()">Run Simulation</button>
+  <span id="desStatus" style="color:var(--text-muted);font-size:12px"></span>
+ </div></div>
+
+ <div class="kpi-grid">
+  <div class="kpi-card blue" id="kpi-throughput"><div class="kpi-label">Throughput</div><div class="kpi-value">--</div><span class="kpi-unit">jobs/hr</span></div>
+  <div class="kpi-card blue" id="kpi-flow"><div class="kpi-label">Avg Flow Time</div><div class="kpi-value">--</div><span class="kpi-unit">hrs</span></div>
+  <div class="kpi-card blue" id="kpi-wip"><div class="kpi-label">Avg WIP</div><div class="kpi-value">--</div><span class="kpi-unit">units</span></div>
+  <div class="kpi-card blue" id="kpi-tardy"><div class="kpi-label">Tardy</div><div class="kpi-value">--</div><span class="kpi-unit">%</span></div>
+ </div>
+
+ <div class="chart-grid">
+  <div class="chart-card"><h3>WIP Over Time</h3><div class="chart-container"><canvas id="wipChart"></canvas></div></div>
+  <div class="chart-card"><h3>Stage Utilization</h3><div class="chart-container"><canvas id="utilChart"></canvas></div></div>
+ </div>
+
+ <div class="chart-card" style="margin-top:12px"><h3>Completed Jobs (<span id="jobCount">0</span>)</h3>
+  <div style="max-height:350px;overflow-y:auto">
+   <table class="data-table" id="jobTable">
+    <thead><tr><th>Job</th><th>Arrival</th><th>Completion</th><th>Flow Time</th><th>Tardy</th></tr></thead>
+    <tbody><tr><td colspan="5" style="color:var(--text-muted)">Click Run Simulation</td></tr></tbody>
+   </table>
+  </div>
+ </div>
+</div>
+
+<!-- Queueing Analytics Tab -->
+<div class="tab-content" id="tab-queue">
+ <div class="control-panel"><div class="control-row">
+  <div class="control-group"><label>Model</label>
+   <select id="qModel"><option value="mm1">M/M/1</option><option value="mmc">M/M/c</option><option value="mg1">M/G/1</option></select>
+  </div>
+  <div class="control-group"><label>λ (arrival)</label><input type="number" id="qLam" value="0.3" step="0.05" style="width:80px"></div>
+  <div class="control-group"><label>μ (service)</label><input type="number" id="qMu" value="0.5" step="0.05" style="width:80px"></div>
+  <div class="control-group"><label>c (servers)</label><input type="number" id="qC" value="2" min="1" style="width:60px"></div>
+  <button class="btn btn-primary" onclick="runQueue()">Calculate</button>
+ </div></div>
+ <div class="kpi-grid" id="queueKPIs"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+let wipChartObj, utilChartObj;
+
+async function runDES() {
+  const lam = parseInt(document.getElementById('arrivalRate').value) / 100;
+  const rule = document.getElementById('dispatchRule').value;
+  const nJobs = parseInt(document.getElementById('numJobs').value);
+  const breakdowns = document.getElementById('breakdowns').checked;
+  const status = document.getElementById('desStatus');
+
+  status.textContent = 'Running...';
+
+  try {
+    const d = await apiPost('/api/des/run', {
+      n_jobs: nJobs,
+      dispatch_rule: rule,
+      arrival_rate: lam,
+      breakdown_rate: breakdowns ? 0.02 : 0,
+      seed: 42
+    });
+
+    status.textContent = 'Done!';
+    showToast(`DES complete: ${d.completed_jobs?.length || 0} jobs`, 'success');
+
+    const o = d.overall || {};
+    document.querySelector('#kpi-throughput .kpi-value').textContent = (o.throughput || 0).toFixed(3);
+    document.querySelector('#kpi-flow .kpi-value').textContent = (o.avg_flow_time || 0).toFixed(1);
+    document.querySelector('#kpi-wip .kpi-value').textContent = (o.avg_wip || 0).toFixed(1);
+    document.querySelector('#kpi-tardy .kpi-value').textContent = (o.tardy_pct || 0).toFixed(1);
+
+    // WIP chart
+    if (wipChartObj) wipChartObj.destroy();
+    const wip = d.wip_over_time || [];
+    if (wip.length) {
+      wipChartObj = new Chart(document.getElementById('wipChart'), {
+        type: 'line',
+        data: {
+          labels: wip.map(w => (Array.isArray(w) ? w[0] : w.time || 0).toFixed(1)),
+          datasets: [{
+            label: 'WIP (units)', data: wip.map(w => Array.isArray(w) ? w[1] : w.wip || 0),
+            borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, pointRadius: 0, tension: 0.2
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: { x: { title: { display: true, text: 'Time (hrs)' } }, y: { title: { display: true, text: 'WIP' } } } }
+      });
+    }
+
+    // Utilization chart
+    if (utilChartObj) utilChartObj.destroy();
+    const stages = d.stage_stats || [];
+    if (stages.length) {
+      utilChartObj = new Chart(document.getElementById('utilChart'), {
+        type: 'bar',
+        data: {
+          labels: stages.map(s => s.name || s.stage || '?'),
+          datasets: [{
+            label: 'Utilization %', data: stages.map(s => ((s.utilization || 0) * 100).toFixed(1)),
+            backgroundColor: stages.map(s => (s.utilization || 0) > 0.85 ? '#ef4444' : (s.utilization || 0) > 0.70 ? '#f59e0b' : '#22c55e')
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: { y: { max: 100, title: { display: true, text: '%' } } },
+          plugins: { legend: { display: false }, annotation: { annotations: { target: { type: 'line', yMin: 85, yMax: 85, borderColor: '#ef4444', borderDash: [5,5] } } } } }
+      });
+    }
+
+    // Jobs table
+    const jobs = d.completed_jobs || [];
+    document.getElementById('jobCount').textContent = jobs.length;
+    const tbody = document.querySelector('#jobTable tbody');
+    tbody.innerHTML = jobs.slice(0, 30).map(j =>
+      `<tr><td>${j.id || j.job_id || '?'}</td><td class="number">${(j.arrival || 0).toFixed(2)}</td><td class="number">${(j.completion || 0).toFixed(2)}</td><td class="number">${(j.flow_time || 0).toFixed(2)}</td><td><span class="badge badge-${j.tardy ? 'red' : 'green'}">${j.tardy ? 'TARDY' : 'OK'}</span></td></tr>`
+    ).join('') + (jobs.length > 30 ? `<tr><td colspan="5" style="color:var(--text-muted)">...and ${jobs.length - 30} more</td></tr>` : '');
+
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    showToast('DES failed: ' + err.message, 'error');
+  }
+}
+
+async function runQueue() {
+  const model = document.getElementById('qModel').value;
+  const lam = parseFloat(document.getElementById('qLam').value);
+  const mu = parseFloat(document.getElementById('qMu').value);
+  const c = parseInt(document.getElementById('qC').value);
+  const d = await apiFetch(`/api/des/queueing?model=${model}&lam=${lam}&mu=${mu}&c=${c}&sigma=0.1`);
+  const kpis = document.getElementById('queueKPIs');
+  kpis.innerHTML = `
+    <div class="kpi-card blue"><div class="kpi-label">ρ (utilization)</div><div class="kpi-value">${(d.rho || 0).toFixed(3)}</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Lq (queue length)</div><div class="kpi-value">${(d.Lq || d.L || 0).toFixed(3)}</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Wq (wait time)</div><div class="kpi-value">${(d.Wq || d.W || 0).toFixed(3)}</div></div>
+    <div class="kpi-card ${(d.rho||0) < 1 ? 'green' : 'red'}"><div class="kpi-label">Stable?</div><div class="kpi-value">${d.stable !== false ? 'YES' : 'NO'}</div></div>
+  `;
+}
+
+document.addEventListener('DOMContentLoaded', () => {});
+</script>{% endblock %}

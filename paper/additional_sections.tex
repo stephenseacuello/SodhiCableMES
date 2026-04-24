@@ -1,0 +1,437 @@
+% additional_sections.tex
+% Draft sections for IFAC MIM 2027 / IEEE CASE 2027 submission
+% Two new sections: ISA-95 Architecture Mapping and MESA Function 12 (AI/ML)
+% Author: Stephen Eacuello — DRAFT for refinement
+%
+% Usage: \input{additional_sections} in the main document, or copy sections
+% into Eacuello_MES_Design_Prototype.tex at the desired location.
+%
+% Placeholder citation keys:
+%   \cite{mesa1997}      — MESA-11 White Paper #06, 1997
+%   \cite{isa95}         — ANSI/ISA-95.00.01-2010 Part 1
+%   \cite{isa95part3}    — ANSI/ISA-95.00.03 Part 3 (Activity Models of MOM)
+%   \cite{isa95part4}    — ANSI/ISA-95.00.04 Part 4 (Objects and Attributes for MOM)
+%   \cite{b2mml}         — B2MML (Business to Manufacturing Markup Language) schema
+%   \cite{shojaeinasab2022} — Intelligent MES systematic review
+%   \cite{mesa2004}      — MESA Strategic Initiatives Model, 2004
+%   \cite{liu2017}       — Isolation Forest (Liu et al., 2008/2012)
+%   \cite{montgomery2019} — Montgomery, Introduction to SQC, 8th ed.
+
+
+%======================================================================
+\section{ISA-95 Architecture Mapping}\label{sec:isa95mapping}
+%======================================================================
+
+The ISA-95 standard (ANSI/ISA-95.00.01-2010) defines a hierarchical model for
+enterprise--control system integration spanning five levels: Level~0 (physical
+process), Level~1 (sensing and actuation), Level~2 (supervisory control),
+Level~3 (manufacturing operations management), and Level~4 (business planning
+and logistics)~\cite{isa95}.  While Section~\ref{sec:overview} introduced this
+hierarchy in functional terms, this section provides a formal compliance mapping
+between ISA-95 activity domains and the SodhiCable MES implementation modules,
+demonstrating how a single Flask-based prototype can simulate the full
+automation pyramid.
+
+\subsection{Hierarchical Mapping}
+
+Table~\ref{tab:isa95matrix} presents the ISA-95 compliance matrix, mapping each
+level to its activity domain, the corresponding SodhiCable implementation
+module(s), and key capabilities realized in the prototype.  Level~3 is further
+decomposed by the 11 MESA functions as defined in ISA-95 Part~3's Activity
+Models of Manufacturing Operations Management~\cite{isa95part3}.
+
+\begin{table}[H]\centering\small
+\caption{ISA-95 Compliance Matrix --- SodhiCable MES Architecture}
+\label{tab:isa95matrix}
+\begin{tabularx}{\textwidth}{@{} l L{2.4cm} L{3.0cm} L{5.5cm} @{}}
+\toprule
+\textbf{ISA-95 Level} & \textbf{Activity Domain} & \textbf{Implementation Module(s)} & \textbf{Key Capabilities} \\
+\midrule
+\multirow{2}{*}{Level 0} & Physical Process & DES Engine & Discrete event simulation of 8-stage factory; compound mixing, wire drawing, extrusion, braiding, cabling, jacketing, testing, packaging \\
+\addlinespace[3pt]
+\multirow{2}{*}{Level 1} & Sensing \& Actuation & OPC-UA Tag Simulator; \tfield{process\_data\_live}; \tfield{spark\_test\_log}; \tfield{energy\_readings} & 9{,}200+ simulated sensor readings (thermocouples, laser micrometers, pressure transducers, line speed encoders, spark testers); configurable scan interval (default 5\,s) \\
+\addlinespace[3pt]
+\multirow{2}{*}{Level 2} & Supervisory Control (SCADA/PLC) & \texttt{api\_scada.py}; PID simulation; PLC status endpoint & SCADA drill-down (plant $\to$ work center $\to$ sensor); PLC control-loop visualization (AUTO/MANUAL mode, setpoint tracking, interlock status); alarm management with severity ranking; energy monitoring per work center \\
+\addlinespace[3pt]
+Level 3 --- F1 & Resource Allocation & \texttt{api\_resources.py} & LP assignment of 26 WCs to WOs; capacity tracking; equipment status management \\
+Level 3 --- F2 & Operations Scheduling & \texttt{api\_schedule.py} & SPT/EDD/MILP sequencing; changeover matrix; Gantt visualization \\
+Level 3 --- F3 & Dispatching & \texttt{api\_dispatch.py} & Weighted priority dispatch; queue management; real-time job release \\
+Level 3 --- F4 & Document Control & \texttt{api\_documents.py} & Recipe versioning (ISA-88 hierarchy); C\,of\,C generation; SOP management \\
+Level 3 --- F5 & Data Collection & \texttt{api\_datacollection.py} & Real-time sensor ingestion; threshold alarming; data collection point configuration \\
+Level 3 --- F6 & Labor Management & \texttt{api\_labor.py} & Skill matrix; certification tracking; IP shift rostering \\
+Level 3 --- F7 & Quality Management & \texttt{api\_quality.py} & $\bar{X}$-$R$ charts; $C_{pk}$ computation; NCR$\to$CAPA workflow; SPC readings \\
+Level 3 --- F8 & Process Management & \texttt{api\_process.py} & Recipe execution; CUSUM/EWMA drift detection; PID simulation; hold/release \\
+Level 3 --- F9 & Maintenance Mgmt & \texttt{api\_maintenance.py} & MTBF-based PM scheduling; corrective maintenance logging; calibration tracking \\
+Level 3 --- F10 & Product Tracking & \texttt{api\_genealogy.py} & Recursive CTE forward/backward trace; lot quarantine; splice zone detection \\
+Level 3 --- F11 & Performance Analysis & \texttt{api\_performance.py} & OEE = $A \times P \times Q$; shift reporting; scrap Pareto; KPI dashboards \\
+\addlinespace[3pt]
+\multirow{2}{*}{Level 4} & Business Planning (ERP) & \texttt{api\_erp.py}; ERP Simulator & S\&OP planning; purchase orders with goods receipt; order-to-cash pipeline; demand forecasting (SES/DES); invoicing; financial P\&L; ISA-95 B2MML message exchange \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+\subsection{B2MML Message Integration}
+
+The ISA-95 standard specifies information exchange between Level~3 and Level~4
+through structured message types defined in the Business to Manufacturing Markup
+Language (B2MML)~\cite{b2mml}.  The SodhiCable prototype simulates these
+exchanges through the \tfield{isa95\_messages} table, which logs every
+cross-boundary transaction with direction, message type, source system, target
+system, payload summary, and processing status.  Table~\ref{tab:b2mml} lists
+the B2MML message types implemented in the prototype.
+
+\begin{table}[H]\centering\small
+\caption{B2MML Message Types Simulated in the SodhiCable MES}
+\label{tab:b2mml}
+\begin{tabularx}{\textwidth}{@{} l l l L{5.0cm} @{}}
+\toprule
+\textbf{Direction} & \textbf{B2MML Message Type} & \textbf{Trigger Event} & \textbf{Payload Description} \\
+\midrule
+L4$\to$L3 & ProductionSchedule & S\&OP approval; WO release from SO & Approved production plan released to MES for scheduling and dispatch \\
+L4$\to$L3 & MaterialRequirement & Manual PO creation & Purchase order for raw materials with quantity, supplier, and expected delivery \\
+L3$\to$L4 & MaterialReceipt & Goods receipt processing & Goods receipt confirmation with accepted/rejected quantities and lot number \\
+L3$\to$L4 & ProductionPerformance & Shift report submission & OEE metrics, output quantities, scrap totals, and downtime summary per shift \\
+% AUTHOR NOTE: Add additional message types as implemented, e.g.:
+% L4$\to$L3 & MaterialDefinition & Product/BOM update & Material master data synchronization \\
+% L3$\to$L4 & QualityTestResult & Test completion & Spark test, dimensional, and DC resistance results \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+\subsection{Cross-Level Integration Points}
+
+Three cross-level integration patterns merit particular attention, as they
+demonstrate how the MES bridges automation and enterprise layers:
+
+\begin{enumerate}[leftmargin=2em, itemsep=2pt]
+\item \textbf{Traceability spanning L1--L4.}  A spark test failure at Level~1
+(sensor detects pinhole in \tfield{spark\_test\_log}) propagates upward through
+Level~2 (alarm triggered, PLC interlock status set to TRIPPED in the
+\texttt{plc\_status} endpoint), Level~3 (NCR auto-created in \tfield{ncr}, lot
+quarantined in \tfield{inventory}, forward trace initiated via
+\tfield{lot\_tracking}), and Level~4 (yield KPI decremented in
+\tfield{shift\_reports}, customer promise date re-evaluated in
+\tfield{sales\_orders}).  This end-to-end chain is exercised in the integration
+timeline (Section~\ref{sec:timeline}, Events~5--8).
+
+\item \textbf{Recipe--sensor closed loop spanning L2--L3.}  Recipe setpoints
+defined at Level~3 (\tfield{recipe\_parameters}: CV zone temperatures, PLCV
+pressure, line speed) are pushed to Level~2 as PLC setpoints.  The SCADA PLC
+status endpoint (\texttt{/api/scada/plc\_status/\{wc\_id\}}) compares actual
+sensor readings against recipe setpoints and computes control error, output
+percentage, and interlock status.  Process deviations detected by CUSUM or EWMA
+at Level~3 feed back as corrective actions or hold/release decisions.
+
+\item \textbf{AI as intelligence overlay spanning L2--L4.}  The AI/ML layer
+(Section~\ref{sec:ai}) operates as a cross-cutting intelligence service
+consuming data from all ISA-95 levels: Level~1/2 sensor data for anomaly
+detection (z-score, Isolation Forest, Mahalanobis distance), Level~3 production
+data for quality prediction (Gradient Boosted Stumps) and maintenance
+forecasting (Weibull RUL), and Level~4 demand and financial data for
+AI-driven recommendations.  This cross-level positioning distinguishes AI
+from the traditional MESA functions, which operate primarily within Level~3.
+% AUTHOR NOTE: Consider adding a diagram showing the AI overlay across levels.
+\end{enumerate}
+
+
+%======================================================================
+\section{Toward MESA Function~12: An AI/ML Intelligence Layer}\label{sec:mesa12}
+%======================================================================
+
+\subsection{Motivation: The MESA-11 Model and the AI Gap}
+
+The MESA International 11-function model, published in 1997~\cite{mesa1997},
+defined the canonical functional decomposition of Manufacturing Execution
+Systems that has guided MES implementations for nearly three decades.  The
+eleven functions---Resource Allocation (F1), Operations Scheduling (F2),
+Dispatching (F3), Document Control (F4), Data Collection (F5), Labor Management
+(F6), Quality Management (F7), Process Management (F8), Maintenance Management
+(F9), Product Tracking (F10), and Performance Analysis (F11)---were conceived in
+an era when shop-floor computing consisted of SCADA/DCS systems with limited
+storage, batch-mode SPC calculations, and manual analysis of printed control
+charts.
+
+The 1997 framework implicitly assumes that human domain experts perform the
+analytical synthesis: an engineer reviews control charts (F7), correlates them
+with process logs (F8), cross-references maintenance history (F9), and makes
+decisions.  The framework provides no function for automated pattern recognition,
+predictive modeling, multivariate anomaly detection, or machine-learned
+optimization---capabilities that modern AI/ML methods can now deliver at
+production-data scale and latency.
+
+MESA International recognized the need for expansion, releasing the Strategic
+Initiatives Model in 2004~\cite{mesa2004} and the Smart Manufacturing Model in
+subsequent years.  ISA-95 itself was extended with Part~4~\cite{isa95part4},
+which added activity models for Manufacturing Operations Management (MOM)
+including production operations, quality operations, maintenance operations, and
+inventory operations.  However, neither MESA nor ISA-95 has formalized
+an AI/ML function within the MES functional hierarchy.
+
+We propose that the original MESA-11 model requires a twelfth function:
+\textbf{F12~--- AI/ML Intelligence Layer}, a cross-cutting analytical function
+that consumes data produced by F1--F11 and generates predictive, prescriptive,
+and diagnostic outputs that augment human decision-making.  The SodhiCable
+prototype provides an existence proof through eight implemented AI/ML
+capabilities.
+
+
+\subsection{Implemented AI/ML Capabilities}
+
+The SodhiCable prototype implements eight distinct AI/ML capabilities in pure
+Python (no external ML libraries), demonstrating that meaningful intelligence
+can be embedded directly in a lightweight MES without requiring a separate data
+science platform.  Table~\ref{tab:f12capabilities} summarizes the eight
+capabilities and their MESA function touchpoints.
+
+\begin{table}[H]\centering\small
+\caption{Proposed F12 Capabilities Implemented in the SodhiCable MES Prototype}
+\label{tab:f12capabilities}
+\begin{tabularx}{\textwidth}{@{} c L{3.0cm} L{3.5cm} l L{2.5cm} @{}}
+\toprule
+\textbf{\#} & \textbf{Capability} & \textbf{Method} & \textbf{Touches} & \textbf{Data Source} \\
+\midrule
+1 & Univariate anomaly detection & Z-score ($|z| > 2.5\sigma$) & F5, F8 & \tfield{process\_data\_live} \\
+2 & Multivariate anomaly detection & Isolation Forest (100-tree ensemble) & F5, F8 & \tfield{process\_data\_live} \\
+3 & Quality prediction & Gradient Boosted Stumps (50-round additive ensemble) & F7, F11 & \tfield{process\_deviations}, \tfield{scrap\_log}, \tfield{shift\_reports} \\
+4 & Multivariate anomaly detection & Mahalanobis distance ($D^2 > \chi^2_{\alpha,p}$) & F5, F7, F8 & \tfield{process\_data\_live} \\
+5 & Predictive maintenance & Weibull/exponential RUL estimation & F9 & \tfield{equipment}, \tfield{maintenance}, \tfield{downtime\_log} \\
+6 & Statistical process monitoring & CUSUM drift \& EWMA smoothing & F7, F8 & \tfield{process\_deviations}, \tfield{spc\_readings} \\
+7 & Prescriptive recommendations & Rules-based engine (7 rule classes) & F1--F11 & Cross-function aggregation \\
+8 & Natural language query & Claude API $\to$ SQL generation $\to$ execution & F5, F11 & Full 78-table schema \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Z-Score Anomaly Detection}
+
+The simplest analytical capability: for each (work center, parameter) group in
+\tfield{process\_data\_live}, the system computes the sample mean $\bar{x}$ and
+standard deviation $s$, then flags any reading where $|z_i| = |x_i - \bar{x}|/s
+> 2.5$ as anomalous.  Readings with $|z| > 3.0$ are classified as Critical;
+those in the range $2.5 < |z| \leq 3.0$ as Warning.  This extends F5 (data
+collection) by adding statistical context to raw sensor values and F8 (process
+management) by detecting deviations that may not cross fixed threshold alarms
+but represent statistically unusual behavior.
+
+\subsubsection{Isolation Forest}
+
+The prototype implements a pure-Python Isolation Forest~\cite{liu2017}
+consisting of 100 isolation trees with a maximum depth of 8 and a subsample
+size of 256.  For each (work center, parameter) group, a three-dimensional
+feature vector is constructed: $[\,z\text{-score},\;\Delta v / s,\;\Delta v_{-2}
+/ s\,]$, where $\Delta v$ is the first difference and $\Delta v_{-2}$ is the
+second-order lag difference, both normalized by the parameter's standard
+deviation.  The anomaly score is computed as $s(x, n) = 2^{-E[h(x)]/c(n)}$,
+where $E[h(x)]$ is the average path length across the 100 trees and $c(n)$ is
+the expected path length of an unsuccessful search in a binary search tree of
+$n$ items.  Readings with $s > 0.65$ are flagged (Critical if $s > 0.75$).
+
+This method detects interaction effects that univariate z-score analysis
+misses---for example, a zone temperature and line speed each within normal range
+individually, but whose combination is anomalous.  The implementation requires
+approximately 80 lines of Python with no external dependencies.
+
+\subsubsection{Gradient Boosted Decision Stumps}
+
+A 50-round gradient boosting ensemble predicts scrap rate per work center.  Each
+round fits a single-split decision stump (one-level tree) to the current
+residuals, selecting the feature and split point that minimize mean squared
+error.  Four features are extracted per work center: (i)~average deviation
+percentage from setpoints, (ii)~count of unresolved process deviations,
+(iii)~average OEE, and (iv)~cumulative downtime minutes.  The learning rate is
+0.3, and the model trains in-memory on each API call (stateless, reproducible).
+
+Feature importance is computed as the cumulative absolute difference between
+left and right split values across all 50 rounds, normalized to percentages.
+The RMSE on the training set provides a diagnostic for model fit.  Work centers
+with predicted scrap rates above 5\% are flagged as Critical, and those above
+3\% as Warning.
+
+\subsubsection{Mahalanobis Distance}
+
+For multivariate anomaly detection that accounts for inter-parameter
+correlations, the prototype computes the Mahalanobis distance $D^2$ for each
+observation vector:
+\[
+D^2 = (\mathbf{x} - \boldsymbol{\mu})^\top \, \boldsymbol{\Sigma}^{-1} \, (\mathbf{x} - \boldsymbol{\mu})
+\]
+where $\boldsymbol{\mu}$ is the sample mean vector and $\boldsymbol{\Sigma}$ is
+the sample covariance matrix, computed from all readings for a given work
+center.  Observations exceeding the $\chi^2$ critical value at the 99\%
+confidence level ($\chi^2_{0.01,2} = 9.21$ for $p=2$ features;
+$\chi^2_{0.01,3} = 11.34$ for $p=3$) are flagged as anomalous.
+
+The covariance matrix inversion is implemented analytically for $p = 2$ and
+$p = 3$ using the adjugate/determinant method (no NumPy dependency).  For work
+centers with more than three tracked parameters, the analysis uses the first
+two principal features to maintain tractability in pure Python.
+
+\subsubsection{Weibull/Exponential RUL Prediction}
+
+Remaining Useful Life (RUL) estimation uses a two-model approach.  When
+sufficient time-between-failure (TBF) data is available ($\geq 3$
+observations), a Weibull distribution is fitted using the method of moments:
+\[
+F(t) = 1 - e^{-(t/\eta)^\beta}
+\]
+where the shape parameter $\beta$ is estimated from the coefficient of variation
+of the TBF data ($\beta \approx 1/\text{CV}$, clamped to $[\,0.5, \infty)$)
+and the scale parameter $\eta$ from the sample mean.  The conditional RUL is
+estimated as $E[T - t \mid T > t] \approx E[T] - t$ for the current elapsed
+time $t$.  For equipment with insufficient failure history, the model falls back
+to the memoryless exponential distribution ($\beta = 1$) with a default
+MTBF of 45 days.
+
+The 7-day failure probability $P(\text{fail in } [t, t+168\text{\,hr}])$ is
+computed from the Weibull survival function difference, enabling risk-ranked
+prioritization of preventive maintenance scheduling.
+
+\subsubsection{CUSUM and EWMA Statistical Monitoring}
+
+Cumulative Sum (CUSUM) and Exponentially Weighted Moving Average (EWMA) charts
+extend traditional Shewhart-type SPC (F7/F8) by detecting sustained small
+shifts that $\bar{X}$-$R$ charts miss~\cite{montgomery2019}.  The prototype
+stores detected CUSUM drifts in \tfield{process\_deviations} with
+\tfield{detection\_method = `CUSUM'} and tracks resolution status.  The AI
+recommendations engine (Capability~7) monitors unresolved CUSUM drifts and
+generates corrective action suggestions referencing likely root causes (die
+wear, material variation, calibration drift).
+
+\subsubsection{AI-Driven Recommendations Engine}
+
+A rules-based recommendation engine synthesizes data from across all MESA
+functions to generate prioritized, actionable recommendations.  Seven rule
+classes are implemented:
+
+\begin{enumerate}[leftmargin=2em, itemsep=1pt]
+\item High scrap rate ($>5\%$) at any work center (touches F5, F7, F8, F10)
+\item Unresolved CUSUM drift on process parameters (touches F5, F7, F8)
+\item Overdue preventive maintenance (touches F1, F9)
+\item Low process capability $C_{pk} < 1.33$ (touches F7, F8, F11)
+\item Expiring operator certifications within 30 days (touches F1, F6)
+\item Declining OEE trend (7-day rolling average) (touches F8, F9, F11)
+\item Accumulation of unresolved process deviations ($>3$) (touches F7, F8)
+\end{enumerate}
+
+Each recommendation includes a priority level (1 = highest), affected work
+center(s), a natural-language explanation with quantitative evidence, and the
+MESA function codes it touches.  This cross-function synthesis---combining
+quality, maintenance, process, labor, and performance data into a single ranked
+action list---is precisely the kind of analytical integration that the original
+MESA-11 model left to human judgment.
+
+\subsubsection{Natural Language Query Interface}
+
+The most advanced F12 capability integrates the Anthropic Claude API to provide
+a natural language $\to$ SQL $\to$ natural language query pipeline.  The system
+constructs a schema-aware prompt containing the full 78-table database structure
+and wire-and-cable domain knowledge (OEE targets, $C_{pk}$ thresholds, product
+family codes, work center types), then uses Claude's tool-use capability to
+iteratively generate and execute SQL queries against the MES database.  Only
+\texttt{SELECT} queries are permitted (enforced server-side), and results are
+limited to 50 rows.
+
+This capability democratizes MES data access: an operator can ask ``Which lot
+should I prioritize?'' and receive a ranked dispatch queue, or a manager can ask
+``How much scrap this week?'' and receive an aggregated summary by cause
+code---without writing SQL or navigating multiple dashboard screens.  The
+agentic loop supports up to 8 iterations of query refinement, enabling complex
+multi-step analyses.
+% AUTHOR NOTE: Consider adding a concrete query example with input/output
+% to illustrate the interaction pattern.
+
+
+\subsection{F12 as a Cross-Cutting Function}
+
+Unlike functions F1--F11, which each address a distinct operational domain, the
+proposed F12 is inherently \textit{cross-cutting}: it consumes data from and
+provides analytical outputs to multiple existing functions simultaneously.
+Figure~\ref{fig:f12touchpoints} (conceptual; to be drawn) would show F12 at the
+center of a hub-and-spoke diagram, with connections to:
+
+\begin{itemize}[leftmargin=2em, itemsep=1pt]
+\item \textbf{F5 --- Data Collection:} F12 consumes the sensor data that F5
+collects, adding statistical and ML-based anomaly detection as a value-added
+analytical layer atop raw data ingestion.
+\item \textbf{F7 --- Quality Management:} F12 extends SPC with predictive
+quality models (Gradient Boosted Stumps predicting scrap rate from process
+features) and multivariate anomaly detection (Mahalanobis distance capturing
+inter-parameter correlations that univariate control charts miss).
+\item \textbf{F8 --- Process Management:} F12 augments CUSUM/EWMA drift
+detection with Isolation Forest anomaly scoring and feeds recommendations back
+to process engineers for corrective action.
+\item \textbf{F9 --- Maintenance Management:} F12 replaces fixed-interval PM
+scheduling with condition-based RUL estimation (Weibull model), enabling
+risk-ranked maintenance prioritization.
+\item \textbf{F11 --- Performance Analysis:} F12 detects OEE trends and
+correlates declining performance with root causes across quality, maintenance,
+and process domains---an analytical synthesis that F11's descriptive KPIs alone
+cannot provide.
+\end{itemize}
+
+This cross-cutting nature is analogous to how ISA-95 Part~4~\cite{isa95part4}
+extended the original Parts~1--3 by defining Manufacturing Operations Management
+(MOM) activity models that cut across production, quality, maintenance, and
+inventory operations.  Just as Part~4 recognized that operational activities do
+not exist in functional silos, F12 recognizes that analytical intelligence must
+span the full MES data landscape to be effective.
+% AUTHOR NOTE: A formal argument for standardization would require mapping F12
+% to ISA-95 Part 3 activity models and demonstrating that no existing activity
+% adequately covers AI/ML analytics.  Consider drafting this for the conference
+% paper.
+
+
+\subsection{Toward Standardization}
+
+The proposal for MESA Function~12 is not merely academic.  Shojaeinasab et
+al.~\cite{shojaeinasab2022} identify five intelligence levels for MES, from
+reactive (Level~1) to cognitive (Level~5), and note that most industrial MES
+implementations remain at Levels~1--2 (reactive and proactive).  The SodhiCable
+prototype operates at Level~3 (predictive) through its Weibull RUL,
+Gradient Boosted quality prediction, and anomaly detection capabilities, with
+elements of Level~4 (prescriptive) in the recommendations engine.
+
+We suggest that formalizing F12 within the MESA framework would provide three
+benefits:
+
+\begin{enumerate}[leftmargin=2em, itemsep=2pt]
+\item \textbf{Architectural clarity.}  Vendors and implementers would have a
+defined functional boundary for AI/ML capabilities, preventing both
+under-investment (treating AI as an afterthought) and scope creep (embedding ML
+in every function without coherent architecture).
+
+\item \textbf{Data contract standardization.}  An F12 specification would define
+the minimum data interfaces required between the intelligence layer and
+functions F1--F11, analogous to how ISA-95 Part~2 defines object models for the
+L3--L4 boundary.  This would enable plug-and-play substitution of AI/ML engines
+(e.g., replacing the pure-Python Isolation Forest with a scikit-learn or
+cloud-based model) without modifying the MES core.
+
+\item \textbf{Maturity assessment.}  An F12 specification could incorporate the
+intelligence-level taxonomy of Shojaeinasab et al.~\cite{shojaeinasab2022},
+providing a maturity model for organizations to assess and benchmark their MES
+AI capabilities.
+\end{enumerate}
+
+The SodhiCable prototype demonstrates that a meaningful F12 implementation is
+feasible with minimal infrastructure: all eight capabilities run in pure Python
+within a single Flask application, with no external ML libraries, GPU
+requirements, or separate data platforms.  This accessibility is critical for
+the small and mid-size manufacturers (SMMs) that constitute the majority of the
+wire and cable industry and for whom heavyweight AI infrastructure is not
+economically viable.
+
+% AUTHOR NOTE: For the conference submission, consider:
+% (1) Adding empirical validation --- run the AI endpoints against the seeded
+%     data and report precision/recall for anomaly detection, RMSE for quality
+%     prediction, and RUL calibration accuracy.
+% (2) Comparing F12 outputs against human expert decisions on the same data
+%     to quantify the value of automated intelligence.
+% (3) Surveying MESA International's current working groups to determine if
+%     an AI/ML function is already under discussion.
+% (4) Discussing computational complexity and scalability --- the pure-Python
+%     implementations are O(n * n_trees * max_depth) for Isolation Forest;
+%     for production scale, discuss when external ML infrastructure becomes
+%     necessary.

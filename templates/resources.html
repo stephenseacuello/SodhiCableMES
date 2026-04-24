@@ -1,0 +1,153 @@
+{% extends "base.html" %}{% set active_page = "resources" %}
+{% block title %}F1 — Resource Allocation — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F1 — Resource Allocation & Status</h1>
+<p class="page-subtitle">Capacity heatmap, WO-to-WC assignments, capacity planning — LP solver for optimal allocation</p>
+
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-overview">Capacity Overview</button>
+ <button class="tab-btn" data-tab="tab-solver">LP Optimizer</button>
+</div>
+
+<div class="tab-content active" id="tab-overview">
+ <div class="kpi-grid" id="heatmapKPIs"></div>
+
+ <div class="chart-card"><h3>Utilization Heatmap — WC × Shift (green &lt;70%, yellow 70-85%, red &gt;85%)</h3>
+  <div style="overflow-x:auto">
+   <table class="data-table" id="heatmapTable">
+    <thead><tr><th>Work Center</th><th>Type</th><th style="text-align:center">Day</th><th style="text-align:center">Swing</th><th style="text-align:center">Night</th><th>Load</th><th>Capacity</th><th>Util</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Work Order Assignment Board</div>
+ <div class="chart-card"><h3>Work Orders by Work Center</h3>
+  <div id="assignmentBoard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px"></div>
+ </div>
+
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Capacity Planning</div>
+ <div class="chart-card"><h3>Capacity vs Load</h3><div class="chart-container" style="height:400px"><canvas id="capChart"></canvas></div></div>
+ <div class="chart-card" style="margin-top:12px"><h3>Capacity Gaps</h3><div id="gapTable"></div></div>
+</div>
+
+<div class="tab-content" id="tab-solver">
+ <div class="control-panel"><div class="control-row">
+  <button class="btn btn-success" onclick="runLP()">Run LP Resource Assignment (P1)</button>
+  <span id="lpStatus" style="color:var(--text-muted);font-size:12px"></span>
+ </div></div>
+ <div class="kpi-grid" id="lpKPIs"></div>
+ <div class="chart-card" id="lpResults"><h3>LP Results</h3><p style="color:var(--text-muted)">Click Run LP to optimize</p></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+let capChartObj;
+const familyColors = {A:'#3b82f6',B:'#ef4444',C:'#f59e0b',D:'#6366f1',I:'#14b8a6',M:'#f97316',R:'#8b5cf6',S:'#ec4899',U:'#22c55e'};
+
+async function loadResources() {
+  const d = await apiFetch('/api/resources/heatmap');
+  const hm = d.heatmap || [];
+  const overloaded = hm.filter(h => h.utilization_pct > 85).length;
+  const avgUtil = hm.length ? (hm.reduce((s,h)=>s+h.utilization_pct,0)/hm.length).toFixed(1) : 0;
+
+  document.getElementById('heatmapKPIs').innerHTML = `
+    <div class="kpi-card blue"><div class="kpi-label">Work Centers</div><div class="kpi-value">${hm.length}</div></div>
+    <div class="kpi-card ${overloaded>0?'red':'green'}"><div class="kpi-label">Overloaded (&gt;85%)</div><div class="kpi-value">${overloaded}</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Avg Utilization</div><div class="kpi-value">${avgUtil}</div><span class="kpi-unit">%</span></div>
+    <div class="kpi-card ${d.capacity_gaps?.length?'yellow':'green'}"><div class="kpi-label">Capacity Gaps</div><div class="kpi-value">${d.capacity_gaps?.length||0}</div></div>`;
+
+  const cc = (pct) => pct>85?'background:rgba(239,68,68,0.2);color:#f87171;font-weight:700':pct>70?'background:rgba(234,179,8,0.15);color:#facc15':pct>0?'background:rgba(34,197,94,0.1);color:#4ade80':'color:var(--text-muted)';
+  document.querySelector('#heatmapTable tbody').innerHTML = hm.map(h => {
+    const rl = h.utilization_pct>85?'border-left:3px solid #ef4444':'';
+    return `<tr style="${rl}"><td><strong>${h.wc_id}</strong></td><td style="color:var(--text-muted);font-size:11px">${h.wc_type}</td>
+    <td style="text-align:center;${cc(h.shifts.Day?.util_pct||0)}">${(h.shifts.Day?.util_pct||0).toFixed(0)}%</td>
+    <td style="text-align:center;${cc(h.shifts.Swing?.util_pct||0)}">${(h.shifts.Swing?.util_pct||0).toFixed(0)}%</td>
+    <td style="text-align:center;${cc(h.shifts.Night?.util_pct||0)}">${(h.shifts.Night?.util_pct||0).toFixed(0)}%</td>
+    <td class="number">${h.total_load_hrs.toFixed(1)}h</td><td class="number">${h.capacity_hrs}h</td>
+    <td class="number" style="${cc(h.utilization_pct)}">${h.utilization_pct.toFixed(1)}%</td></tr>`;
+  }).join('');
+
+  // Assignment board
+  const board = document.getElementById('assignmentBoard');
+  const withWOs = hm.filter(h=>h.wo_count>0).sort((a,b)=>b.wo_count-a.wo_count);
+  board.innerHTML = (withWOs.length?withWOs:hm.slice(0,12)).map(h => {
+    const uc = h.utilization_pct>85?'var(--accent-red)':h.utilization_pct>70?'var(--accent-yellow)':'var(--accent-green)';
+    const cards = (h.work_orders||[]).map(wo => {
+      const fc = familyColors[wo.family]||'#64748b';
+      return `<div style="background:${fc}22;border-left:3px solid ${fc};padding:4px 8px;margin:4px 0;border-radius:4px;font-size:11px"><strong>${wo.wo_id}</strong> ${wo.product_id}<br><span style="color:var(--text-muted)">${wo.order_qty_kft} KFT | Pri ${wo.priority}</span></div>`;
+    }).join('');
+    return `<div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:12px;border-top:3px solid ${uc}">
+      <div style="font-weight:700">${h.wc_id}</div><div style="font-size:11px;color:var(--text-muted)">${h.name}</div>
+      <div style="font-size:20px;font-weight:700;color:${uc};margin:4px 0">${h.utilization_pct.toFixed(0)}%</div>
+      <div style="font-size:11px;color:var(--text-muted)">${h.wo_count} WOs | ${h.total_load_hrs.toFixed(1)}h</div>
+      <div style="margin-top:8px">${cards||'<div style="color:var(--text-muted);font-size:11px">No pending WOs</div>'}</div></div>`;
+  }).join('');
+
+  // Capacity chart
+  if(capChartObj)capChartObj.destroy();
+  const sorted=[...hm].sort((a,b)=>b.total_load_hrs-a.total_load_hrs).slice(0,15);
+  capChartObj=new Chart(document.getElementById('capChart'),{type:'bar',data:{labels:sorted.map(h=>h.wc_id),
+    datasets:[{label:'Load (hrs)',data:sorted.map(h=>h.total_load_hrs),backgroundColor:sorted.map(h=>h.utilization_pct>85?'#ef4444':'#3b82f6')},
+    {label:'Capacity',data:sorted.map(h=>h.capacity_hrs),type:'line',borderColor:'#22c55e',borderDash:[5,5],pointRadius:0,fill:false}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{title:{display:true,text:'Hours'}}},plugins:{legend:{position:'top'}}}});
+
+  // Gaps
+  const gaps=d.capacity_gaps||[];
+  document.getElementById('gapTable').innerHTML = gaps.length ?
+    `<table class="data-table"><thead><tr><th>WC</th><th>Pending</th><th>Capacity</th><th>Gap</th><th>Overtime</th><th>Action</th></tr></thead><tbody>${
+    gaps.map(g=>`<tr><td><strong>${g.wc_id}</strong></td><td class="number">${g.pending_hrs}h</td><td class="number">${g.capacity_hrs}h</td><td class="number" style="color:#ef4444">${g.gap_hrs}h</td><td class="number" style="color:#f59e0b">${g.overtime_needed}h</td><td><span class="badge badge-yellow">Schedule OT</span></td></tr>`).join('')
+    }</tbody></table>` : '<p style="color:var(--accent-green);font-weight:600">No capacity gaps — sufficient capacity for all pending work.</p>';
+  updateTimestamp();
+}
+
+async function runLP() {
+  const st=document.getElementById('lpStatus'); st.textContent='Solving...';
+  try {
+    const d=await apiPost('/api/scheduling/solve',{solver:'p1'}); st.textContent='Done!';
+    showToast('LP complete','success');
+    if(d.result&&Array.isArray(d.result)&&d.result.length>=4){
+      const[status,profit,quantities,shadows]=d.result;
+      const active = Object.entries(quantities||{}).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+      const excluded = Object.entries(quantities||{}).filter(([k,v])=>v===0).length;
+      const totalQty = active.reduce((s,[k,v])=>s+v, 0);
+
+      document.getElementById('lpKPIs').innerHTML=`
+        <div class="kpi-card green"><div class="kpi-label">Status</div><div class="kpi-value">${status}</div></div>
+        <div class="kpi-card green"><div class="kpi-label">Max Profit</div><div class="kpi-value">$${fmt(profit)}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Products Selected</div><div class="kpi-value">${active.length} of ${active.length + excluded}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Total Volume</div><div class="kpi-value">${fmt(totalQty,1)}</div><span class="kpi-unit">KFT</span></div>`;
+
+      let html = '<p style="color:var(--text-secondary);margin-bottom:12px">The LP solver maximizes profit subject to work center capacity constraints. It selects the highest-margin products that fit within available capacity. Products at 0 are excluded because their capacity is better used for higher-margin items.</p>';
+
+      html += '<h4>Optimal Product Mix (profit-maximizing allocation)</h4>';
+      html += '<table class="data-table"><thead><tr><th>Product</th><th>Quantity (KFT)</th><th>Margin ($/KFT)</th><th>Contribution ($)</th></tr></thead><tbody>';
+      active.forEach(([p,q])=>{
+        // Estimate margin from product name/family
+        html+=`<tr><td><strong>${p}</strong></td><td class="number">${fmt(q,1)}</td><td class="number">—</td><td class="number">—</td></tr>`;
+      });
+      html+='</tbody></table>';
+
+      if (excluded > 0) {
+        html += `<p style="color:var(--text-muted);margin-top:12px;font-size:12px">${excluded} products excluded by optimizer (capacity allocated to higher-margin items)</p>`;
+      }
+
+      if(shadows&&Object.keys(shadows).length){
+        const binding = Object.entries(shadows).filter(([n,p])=>Math.abs(p)>0.01).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+        if (binding.length) {
+          html+='<h4 style="margin-top:16px">Binding Constraints (Shadow Prices)</h4>';
+          html+='<p style="color:var(--text-secondary);font-size:12px;margin-bottom:8px">Shadow price = marginal value of one more hour of capacity at this WC. Higher price = tighter bottleneck.</p>';
+          html+='<table class="data-table"><thead><tr><th>Work Center Constraint</th><th>Shadow Price ($/hr)</th></tr></thead><tbody>';
+          binding.forEach(([n,p])=>{html+=`<tr><td>${n}</td><td class="number" style="color:${Math.abs(p)>1?'#ef4444':'var(--text-primary)'}">${p.toFixed(2)}</td></tr>`;});
+          html+='</tbody></table>';
+        }
+      } else {
+        html += '<p style="color:var(--text-muted);margin-top:12px;font-size:12px">No binding capacity constraints detected — the solution may be limited by demand (max order quantities) rather than capacity.</p>';
+      }
+
+      document.getElementById('lpResults').innerHTML=html;
+    }
+  } catch(e){st.textContent='Error: '+e.message;showToast('LP failed','error');}
+}
+
+document.addEventListener('DOMContentLoaded', loadResources);
+</script>{% endblock %}

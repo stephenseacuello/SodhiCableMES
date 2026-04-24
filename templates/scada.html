@@ -1,0 +1,843 @@
+{% extends "base.html" %}{% set active_page = "scada" %}
+{% block title %}SCADA — SodhiCable MES{% endblock %}
+{% block content %}
+<script>document.body.dataset.tour='scada'</script>
+
+<!-- Header Row: Title + Breadcrumb + ISA Badge -->
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+  <div>
+    <h1 class="page-title" style="margin-bottom:2px">SCADA Plant Floor</h1>
+    <div id="breadcrumb" style="font-size:13px;color:var(--text-muted)">
+      <span class="bc-plant" style="cursor:pointer;color:var(--accent-blue)" onclick="goToPlant()">Plant Floor</span>
+      <span id="bcWC" style="display:none"> &rsaquo; <span class="bc-wc" style="cursor:pointer;color:var(--accent-blue)" onclick="goBack()"></span></span>
+      <span id="bcParam" style="display:none"> &rsaquo; <span class="bc-param"></span></span>
+    </div>
+  </div>
+  <div id="isaBadge" style="font-size:14px;padding:6px 16px;border-radius:6px;font-weight:600;letter-spacing:0.5px;background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.3)">
+    ISA-95 Level 3 &mdash; Manufacturing Operations (MES)
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- LEVEL 3: PLANT FLOOR OVERVIEW                                 -->
+<!-- ============================================================ -->
+<div id="view-plant">
+  <!-- KPI Row -->
+  <div class="kpi-grid" style="margin-bottom:16px">
+    <div class="kpi-card blue" id="kpi-total"><div class="kpi-label">Total Work Centers</div><div class="kpi-value">--</div></div>
+    <div class="kpi-card green" id="kpi-running"><div class="kpi-label">Running</div><div class="kpi-value">0</div></div>
+    <div class="kpi-card" id="kpi-idle"><div class="kpi-label">Idle</div><div class="kpi-value">0</div></div>
+    <div class="kpi-card red" id="kpi-alarms"><div class="kpi-label">Alarms Active</div><div class="kpi-value">0</div></div>
+  </div>
+
+  <!-- Production Flow Diagram -->
+  <div style="display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:16px;padding:8px;background:var(--bg-secondary);border-radius:8px;flex-wrap:wrap">
+    <span style="font-size:10px;padding:4px 8px;background:rgba(245,158,11,0.15);border-radius:4px;color:var(--accent-gold)">COMPOUND</span>
+    <span style="color:var(--text-muted)">&rarr;</span>
+    <span style="font-size:10px;padding:4px 8px;background:rgba(59,130,246,0.15);border-radius:4px;color:var(--accent-blue)">DRAW &amp; STRAND</span>
+    <span style="color:var(--text-muted)">&rarr;</span>
+    <span style="font-size:10px;padding:4px 8px;background:rgba(34,197,94,0.15);border-radius:4px;color:var(--accent-green)">EXTRUSION</span>
+    <span style="color:var(--text-muted)">&rarr;</span>
+    <span style="font-size:10px;padding:4px 8px;background:rgba(139,92,246,0.15);border-radius:4px;color:#a78bfa">SHIELD &amp; BRAID</span>
+    <span style="color:var(--text-muted)">&rarr;</span>
+    <span style="font-size:10px;padding:4px 8px;background:rgba(236,72,153,0.15);border-radius:4px;color:#f472b6">CABLE &amp; ARMOR</span>
+    <span style="color:var(--text-muted)">&rarr;</span>
+    <span style="font-size:10px;padding:4px 8px;background:rgba(239,68,68,0.15);border-radius:4px;color:var(--accent-red)">TEST</span>
+    <span style="color:var(--text-muted)">&rarr;</span>
+    <span style="font-size:10px;padding:4px 8px;background:rgba(100,116,139,0.15);border-radius:4px;color:#94a3b8">CUT &amp; SHIP</span>
+  </div>
+
+  <!-- Factory Floor Grid -->
+  <div id="plantFloor" class="factory-floor" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px"></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- LEVEL 2: WORK CENTER DETAIL                                   -->
+<!-- ============================================================ -->
+<div id="view-wc" style="display:none">
+  <button class="btn" onclick="goBack()" style="margin-bottom:12px">&larr; Back to Plant Floor</button>
+
+  <div style="display:grid;grid-template-columns:2fr 3fr;gap:16px;align-items:start">
+    <!-- Left Panel — WC Info -->
+    <div>
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3 id="wc-detail-name">Work Center</h3>
+        <table class="data-table" id="wc-info-table" style="font-size:13px">
+          <tbody>
+            <tr><td style="font-weight:600">ID</td><td id="wci-id">--</td></tr>
+            <tr><td style="font-weight:600">Type</td><td id="wci-type">--</td></tr>
+            <tr><td style="font-weight:600">Parallel Lines</td><td id="wci-parallel">--</td></tr>
+            <tr><td style="font-weight:600">Capacity</td><td id="wci-capacity">--</td></tr>
+            <tr><td style="font-weight:600">Utilization Target</td><td id="wci-target">--</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Equipment List -->
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>Equipment</h3>
+        <table class="data-table" style="font-size:12px">
+          <thead><tr><th>Code</th><th>Description</th><th>Status</th></tr></thead>
+          <tbody id="wc-equip-body"><tr><td colspan="3">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Environment -->
+      <div class="chart-card" id="env-card" style="margin-bottom:16px">
+        <h3>Environment</h3>
+        <div id="env-content" style="font-size:14px;padding:8px 0">No data</div>
+      </div>
+
+      <!-- Upcoming Maintenance -->
+      <div class="chart-card">
+        <h3>Upcoming Maintenance</h3>
+        <table class="data-table" style="font-size:12px">
+          <thead><tr><th>Equipment</th><th>PM Type</th><th>Next Due</th></tr></thead>
+          <tbody id="wc-maint-body"><tr><td colspan="3">--</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right Panel — Organized by ISA-95 Level -->
+    <div>
+      <!-- ====== L1: Sensor Readings ====== -->
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-green);margin:0 0 8px;font-weight:700;border-bottom:1px solid var(--accent-green);padding-bottom:4px">
+        <span class="badge badge-green" style="margin-right:6px">L1</span> Sensing &amp; Actuation (Field Devices)
+      </div>
+
+      <!-- Live Parameters -->
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>Live Parameters</h3>
+        <div id="live-params-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;padding:4px 0">
+          <div style="color:var(--text-muted)">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Energy Monitoring -->
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>Energy Monitoring</h3>
+        <div class="kpi-grid" id="energyKPIs" style="grid-template-columns:repeat(3,1fr)">
+          <div class="kpi-card blue"><div class="kpi-label">Current Draw</div><div class="kpi-value" id="energyKW">--</div><span class="kpi-unit">kW</span></div>
+          <div class="kpi-card blue"><div class="kpi-label">Today</div><div class="kpi-value" id="energyToday">--</div><span class="kpi-unit">kWh</span></div>
+          <div class="kpi-card blue"><div class="kpi-label">Efficiency</div><div class="kpi-value" id="energyKFT">--</div><span class="kpi-unit" id="energyKFTUnit">kWh/KFT</span></div>
+        </div>
+        <div style="height:80px;margin-top:8px"><canvas id="energySparkline"></canvas></div>
+      </div>
+
+      <!-- ====== L2: Control ====== -->
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-yellow);margin:16px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-yellow);padding-bottom:4px">
+        <span class="badge badge-yellow" style="margin-right:6px">L2</span> Supervisory &amp; Automated Control (SCADA / PLC / PID)
+      </div>
+
+      <!-- PLC / Controller Status -->
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>PLC / Controller Status <span id="plcMode" class="badge badge-green" style="margin-left:8px">AUTO</span> <span id="plcInterlock" class="badge badge-green" style="margin-left:4px">INTERLOCK OK</span></h3>
+        <table class="data-table" id="plcTable">
+          <thead><tr><th>Loop</th><th>Mode</th><th>Setpoint</th><th>Actual</th><th>Error</th><th>Output %</th><th>Interlock</th></tr></thead>
+          <tbody><tr><td colspan="7" style="color:var(--text-muted)">Select a work center...</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Active Recipe -->
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>Active Recipe</h3>
+        <div id="recipe-content" style="padding:4px 0;font-size:13px">No approved recipe</div>
+      </div>
+
+      <!-- Spark Test Results (TEST WCs only) -->
+      <div id="sparkTestCard" style="display:none;margin-bottom:16px" class="chart-card">
+        <h3>Spark Test Results <span id="sparkPassBadge" class="badge badge-green"></span></h3>
+        <div style="max-height:200px;overflow-y:auto">
+          <table class="data-table" id="sparkTestTable" style="font-size:12px">
+            <thead><tr><th>Reel</th><th>WO</th><th>Voltage</th><th>Result</th><th>Fault (ft)</th><th>Time</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ====== L3: MES Integration ====== -->
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:16px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">
+        <span class="badge badge-blue" style="margin-right:6px">L3</span> Manufacturing Operations Management (MES)
+      </div>
+
+      <!-- Alarms -->
+      <div class="chart-card" style="margin-bottom:16px">
+        <h3>Active Alarms</h3>
+        <table class="data-table" style="font-size:12px">
+          <thead><tr><th>Parameter</th><th>Value</th><th>Setpoint</th><th>Severity</th><th>Time</th></tr></thead>
+          <tbody id="wc-alarm-body"><tr><td colspan="5">None</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- ISA-95 Data Flow -->
+      <div class="chart-card" style="border-left:4px solid var(--accent-blue)">
+        <h3>ISA-95 Data Flow</h3>
+        <div style="font-family:monospace;font-size:12px;line-height:2.2;padding:8px">
+          <div><span class="badge badge-green" style="width:28px;text-align:center">L1</span> Sensors &rarr; <span id="flowParams" style="color:var(--text-muted)">loading...</span></div>
+          <div style="padding-left:32px;color:var(--text-muted)">&darr; process_data_live (every 1-10s)</div>
+          <div><span class="badge badge-yellow" style="width:28px;text-align:center">L2</span> <a href="/process" style="color:var(--accent-yellow)">PID setpoint check, alarm evaluation, CUSUM/EWMA</a></div>
+          <div style="padding-left:32px;color:var(--text-muted)">&darr; process_deviations if threshold exceeded</div>
+          <div><span class="badge badge-blue" style="width:28px;text-align:center">L3</span> <a href="/quality" style="color:var(--accent-blue)">SPC charting, NCR creation, hold/release, OEE calculation</a></div>
+          <div style="padding-left:32px;color:var(--text-muted)">&darr; shift_reports aggregation</div>
+          <div><span style="background:rgba(139,92,246,0.15);color:#a78bfa;padding:2px 8px;border-radius:4px;font-size:11px;width:28px;text-align:center;display:inline-block">L4</span> <a href="/executive" style="color:#a78bfa">Executive KPI, cost rollup, delivery impact</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- LEVEL 1: SENSOR DETAIL                                        -->
+<!-- ============================================================ -->
+<div id="view-sensor" style="display:none">
+  <button class="btn" onclick="goBack()" id="sensor-back-btn">&larr; Back to Work Center</button>
+
+  <h2 id="sensor-title" style="margin:12px 0 8px">Sensor Detail</h2>
+
+  <!-- Level 0: Physical Process Description -->
+  <div class="chart-card" id="processDescCard" style="margin-bottom:12px;border-left:4px solid var(--accent-green)">
+    <h3 style="color:var(--accent-green)">Level 0 — Physical Process</h3>
+    <p id="processDesc" style="color:var(--text-secondary);font-size:13px;line-height:1.7"></p>
+  </div>
+
+  <!-- Full-Width Trend Chart -->
+  <div class="chart-card" style="margin-bottom:16px">
+    <div class="chart-container" style="position:relative;height:360px">
+      <canvas id="sensorChart"></canvas>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" style="margin-bottom:16px">
+    <div class="kpi-card blue" id="sensor-kpi-current"><div class="kpi-label">Current Value</div><div class="kpi-value">--</div><span class="kpi-unit" id="sensor-kpi-uom"></span></div>
+    <div class="kpi-card green" id="sensor-kpi-setpoint"><div class="kpi-label">Setpoint</div><div class="kpi-value">--</div></div>
+    <div class="kpi-card" id="sensor-kpi-min"><div class="kpi-label">Min in Window</div><div class="kpi-value">--</div></div>
+    <div class="kpi-card" id="sensor-kpi-max"><div class="kpi-label">Max in Window</div><div class="kpi-value">--</div></div>
+    <div class="kpi-card" id="sensor-kpi-inspec"><div class="kpi-label">% Within Spec</div><div class="kpi-value">--</div><span class="kpi-unit">%</span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <!-- Collection Config -->
+    <div class="chart-card">
+      <h3>Collection Configuration</h3>
+      <table class="data-table" style="font-size:13px">
+        <tbody id="sensor-config-body">
+          <tr><td colspan="2">--</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Recent Deviations -->
+    <div class="chart-card">
+      <h3>Recent Deviations</h3>
+      <div style="max-height:260px;overflow-y:auto">
+        <table class="data-table" style="font-size:12px">
+          <thead><tr><th>Time</th><th>Value</th><th>Setpoint</th><th>Severity</th><th>Action</th></tr></thead>
+          <tbody id="sensor-dev-body"><tr><td colspan="5">None</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Table of Readings -->
+  <div class="chart-card">
+    <h3>Recent Readings</h3>
+    <div style="max-height:300px;overflow-y:auto">
+      <table class="data-table" style="font-size:12px">
+        <thead><tr><th>Timestamp</th><th>Value</th><th>Quality</th></tr></thead>
+        <tbody id="sensor-readings-body"><tr><td colspan="3">--</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+/* ------------------------------------------------------------------ */
+/*  STATE                                                              */
+/* ------------------------------------------------------------------ */
+let currentLevel = 3;
+let currentWC    = null;
+let currentWCName = null;
+let currentParam = null;
+let sensorChart  = null;
+let plantData    = [];
+
+/* ------------------------------------------------------------------ */
+/*  NAVIGATION                                                         */
+/* ------------------------------------------------------------------ */
+function showView(level) {
+  document.getElementById('view-plant').style.display  = level === 3 ? '' : 'none';
+  document.getElementById('view-wc').style.display     = level === 2 ? '' : 'none';
+  document.getElementById('view-sensor').style.display = level === 1 ? '' : 'none';
+  currentLevel = level;
+  updateBreadcrumb();
+  updateISABadge();
+}
+
+function goToPlant() { currentWC = null; currentParam = null; showView(3); loadPlantOverview(); }
+
+function goBack() {
+  if (currentLevel === 1) { currentParam = null; showView(2); selectWC(currentWC); }
+  else if (currentLevel === 2) { goToPlant(); }
+}
+
+function updateBreadcrumb() {
+  document.getElementById('bcWC').style.display    = currentLevel <= 2 ? '' : 'none';
+  document.getElementById('bcParam').style.display = currentLevel === 1 ? '' : 'none';
+  if (currentWCName) document.querySelector('.bc-wc').textContent = currentWCName;
+  if (currentParam)  document.querySelector('.bc-param').textContent = currentParam;
+}
+
+function updateISABadge() {
+  const badge = document.getElementById('isaBadge');
+  if (currentLevel === 3) {
+    badge.textContent = 'ISA-95 Level 3 \u2014 Manufacturing Operations (MOM/MES)';
+    badge.style.background = 'rgba(59,130,246,0.18)';
+    badge.style.color = '#60a5fa';
+    badge.style.borderColor = 'rgba(59,130,246,0.3)';
+  } else if (currentLevel === 2) {
+    badge.textContent = 'ISA-95 Level 2 \u2014 Supervisory & Automated Control (SCADA/DCS/PLC)';
+    badge.style.background = 'rgba(234,179,8,0.18)';
+    badge.style.color = '#facc15';
+    badge.style.borderColor = 'rgba(234,179,8,0.3)';
+  } else {
+    badge.textContent = 'ISA-95 Level 1 \u2014 Sensing & Actuation (Field Devices)';
+    badge.style.background = 'rgba(34,197,94,0.18)';
+    badge.style.color = '#4ade80';
+    badge.style.borderColor = 'rgba(34,197,94,0.3)';
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  HELPERS                                                            */
+/* ------------------------------------------------------------------ */
+function severityBadge(sev) {
+  const cls = { Critical:'badge-red', Major:'badge-red', Minor:'badge-yellow', Warning:'badge-yellow' };
+  return `<span class="badge ${cls[sev] || 'badge-blue'}">${sev || '--'}</span>`;
+}
+function qualityColor(flag) {
+  if (flag === 'Good')    return '#4ade80';
+  if (flag === 'Suspect') return '#facc15';
+  if (flag === 'Bad')     return '#ef4444';
+  return '#94a3b8';
+}
+function statusClass(s) { return (s || 'idle').toLowerCase(); }
+
+/* ------------------------------------------------------------------ */
+/*  LEVEL 3 — PLANT OVERVIEW                                          */
+/* ------------------------------------------------------------------ */
+// Stage ordering for factory-floor layout
+const STAGE_ORDER = [
+  'Compounding',
+  'Wire Draw & Strand',
+  'Extrusion Lines',
+  'Shielding & Taping',
+  'Braiding',
+  'Cabling & Assembly',
+  'Armoring',
+  'Testing',
+  'Cut & Ship'
+];
+const TYPE_STAGE = {
+  // Must match actual wc_type values in the database
+  'Compound': 'Compounding',
+  'Draw': 'Wire Draw & Strand',
+  'Strand': 'Wire Draw & Strand',
+  'CV': 'Extrusion Lines',
+  'Jacket': 'Extrusion Lines',
+  'PT': 'Extrusion Lines',
+  'Foil': 'Shielding & Taping',
+  'Tape': 'Shielding & Taping',
+  'Braid': 'Braiding',
+  'Cable': 'Cabling & Assembly',
+  'Combine': 'Cabling & Assembly',
+  'Armor': 'Armoring',
+  'CCCW': 'Armoring',
+  'Test': 'Testing',
+  'Cut': 'Cut & Ship',
+  'Pack': 'Cut & Ship',
+  'External': 'Cut & Ship',
+};
+
+function stageOf(wc) {
+  return TYPE_STAGE[wc.wc_type] || 'Other';
+}
+
+async function loadPlantOverview() {
+  try {
+    const data = await apiFetch('/api/scada/plant_overview');
+    plantData = data;
+
+    // KPIs
+    const running = data.filter(w => (w.sim_status||'').toLowerCase() === 'running').length;
+    const idle    = data.filter(w => !w.sim_status || (w.sim_status||'').toLowerCase() === 'idle').length;
+    const alarms  = data.reduce((s, w) => s + (w.alarms?.alarm_count || 0), 0);
+
+    animateValue(document.querySelector('#kpi-total .kpi-value'),  0, data.length);
+    animateValue(document.querySelector('#kpi-running .kpi-value'), 0, running);
+    animateValue(document.querySelector('#kpi-idle .kpi-value'),    0, idle);
+    animateValue(document.querySelector('#kpi-alarms .kpi-value'),  0, alarms);
+
+    // Group by stage
+    const grouped = {};
+    data.forEach(wc => {
+      const stage = stageOf(wc);
+      if (!grouped[stage]) grouped[stage] = [];
+      grouped[stage].push(wc);
+    });
+
+    const floor = document.getElementById('plantFloor');
+    floor.innerHTML = '';
+
+    let stageIdx = 0;
+    STAGE_ORDER.forEach(stage => {
+      const wcs = grouped[stage];
+      if (!wcs || !wcs.length) return;
+
+      const cols = Math.min(wcs.length, 4);
+      const groupDiv = document.createElement('div');
+      groupDiv.style.cssText = `grid-column:span ${Math.min(cols, 5)};margin-bottom:4px`;
+
+      let html = `<div style="font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-gold);margin-bottom:4px;font-weight:600">${stage}</div>`;
+      html += `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px">`;
+
+      wcs.forEach(wc => {
+        const st  = statusClass(wc.sim_status);
+        const ac  = wc.alarms?.alarm_count || 0;
+        const oee = wc.oee ? (wc.oee.oee_overall * 100).toFixed(1) + '%' : '--';
+        const util = wc.sim_utilization != null ? (wc.sim_utilization * 100).toFixed(0) : '0';
+
+        html += `<div class="wc-box ${st}" style="cursor:pointer;position:relative;min-height:120px" onclick="selectWC('${wc.wc_id}')">`;
+        html += `<div class="wc-name" style="font-size:13px">${wc.name || wc.wc_id}</div>`;
+        html += `<div style="font-size:9px;color:var(--text-muted)">${wc.wc_id} | ${wc.num_parallel || 1} line${(wc.num_parallel||1)>1?'s':''}</div>`;
+        html += `<div class="wc-status">${(wc.sim_status || 'idle').toUpperCase()}</div>`;
+        // Current job
+        html += `<div style="font-size:10px;color:var(--accent-blue);margin-top:2px">${wc.current_job ? 'Job: '+wc.current_job : ''}</div>`;
+        html += `<div class="wc-queue" title="Queue length" style="font-size:16px">${wc.queue_length || 0}</div>`;
+        html += `<div style="font-size:9px;color:var(--text-muted)">queue</div>`;
+        // Utilization mini bar
+        html += `<div style="margin-top:4px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">`;
+        html += `<div style="height:100%;width:${util}%;background:${parseInt(util)>80?'#4ade80':parseInt(util)>50?'#facc15':'#ef4444'};border-radius:2px;transition:width 0.6s"></div></div>`;
+        html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px">`;
+        html += `<span>OEE ${oee}</span>`;
+        const capUnit = wc.wc_type === 'Compound' ? 'lb/hr' : 'ft/hr';
+        html += `<span>${wc.capacity_ft_per_hr ? fmt(wc.capacity_ft_per_hr)+' '+capUnit : ''}</span>`;
+        html += `</div>`;
+        // Alarm badge
+        if (ac > 0) {
+          html += `<div style="position:absolute;top:6px;right:6px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 8px rgba(239,68,68,0.6)">${ac}</div>`;
+        }
+        html += `</div>`;
+      });
+      html += '</div>';
+      groupDiv.innerHTML = html;
+      floor.appendChild(groupDiv);
+
+      // After each stage group (except the last), add a flow arrow
+      if (stageIdx < STAGE_ORDER.length - 1) {
+        const arrow = document.createElement('div');
+        arrow.style.cssText = 'text-align:center;color:var(--accent-gold);font-size:18px;margin:4px 0;opacity:0.5;grid-column:1/-1';
+        arrow.textContent = '\u25BC';
+        floor.appendChild(arrow);
+      }
+      stageIdx++;
+    });
+
+    updateTimestamp();
+  } catch (e) { console.error('Plant overview error:', e); }
+}
+
+/* ------------------------------------------------------------------ */
+/*  LEVEL 2 — WORK CENTER DETAIL                                      */
+/* ------------------------------------------------------------------ */
+async function selectWC(wcId) {
+  currentWC = wcId;
+  currentLevel = 2;
+  showView(2);
+
+  try {
+    const d = await apiFetch(`/api/scada/workcenter/${encodeURIComponent(wcId)}`);
+    const wc = d.wc_info;
+    currentWCName = wc.name || wcId;
+    updateBreadcrumb();
+
+    // WC Info
+    document.getElementById('wc-detail-name').textContent = wc.name || wcId;
+    document.getElementById('wci-id').textContent       = wc.wc_id;
+    document.getElementById('wci-type').textContent     = wc.wc_type || '--';
+    document.getElementById('wci-parallel').textContent = wc.num_parallel || 1;
+    const capUnitL2 = wc.wc_type === 'Compound' ? ' lb/hr' : ' ft/hr';
+    document.getElementById('wci-capacity').textContent = wc.capacity_ft_per_hr ? fmt(wc.capacity_ft_per_hr) + capUnitL2 : '--';
+    document.getElementById('wci-target').textContent   = wc.utilization_target ? (wc.utilization_target * 100).toFixed(0) + '%' : '--';
+
+    // Equipment
+    const eqBody = document.getElementById('wc-equip-body');
+    if (d.equipment.length) {
+      eqBody.innerHTML = d.equipment.map(e =>
+        `<tr><td>${e.equipment_code || e.equipment_id}</td><td>${e.description || '--'}</td><td>${e.status || '--'}</td></tr>`
+      ).join('');
+    } else { eqBody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted)">No equipment</td></tr>'; }
+
+    // Recipe
+    const rc = document.getElementById('recipe-content');
+    if (d.recipe) {
+      const r = d.recipe;
+      const statusBadge = r.status === 'Approved'
+        ? '<span class="badge badge-green">Approved</span>'
+        : `<span class="badge badge-yellow">${r.status}</span>`;
+      rc.innerHTML = `<div style="margin-bottom:6px"><strong>${r.recipe_code || '--'}</strong> ${statusBadge}</div>`;
+      rc.innerHTML += `<div style="color:var(--text-secondary);margin-bottom:8px">${r.description || ''}</div>`;
+      if (r.parameters && r.parameters.length) {
+        rc.innerHTML += `<table class="data-table" style="font-size:12px"><thead><tr><th>Parameter</th><th>Value</th><th>UOM</th><th>Lower</th><th>Upper</th></tr></thead><tbody>` +
+          r.parameters.map(p =>
+            `<tr><td>${p.parameter_name}</td><td>${p.parameter_value ?? '--'}</td><td>${p.uom || ''}</td><td>${p.lower_limit ?? '--'}</td><td>${p.upper_limit ?? '--'}</td></tr>`
+          ).join('') + '</tbody></table>';
+      }
+    } else { rc.innerHTML = '<span style="color:var(--text-muted)">No approved recipe</span>'; }
+
+    // Live Parameters
+    const lpGrid = document.getElementById('live-params-grid');
+    if (d.live_params.length) {
+      lpGrid.innerHTML = d.live_params.map(lp => {
+        const qColor = qualityColor(lp.quality_flag);
+        const sp = lp.setpoint != null ? lp.setpoint : '--';
+        const lo = lp.lower_limit != null ? lp.lower_limit : '';
+        const hi = lp.upper_limit != null ? lp.upper_limit : '';
+        const limText = (lo || hi) ? `[${lo} – ${hi}]` : '';
+        return `<div style="background:rgba(30,41,59,0.5);border:1px solid var(--border-color);border-radius:8px;padding:10px;cursor:pointer;transition:border-color 0.3s" onclick="selectSensor('${wcId}','${lp.parameter}')" onmouseenter="this.style.borderColor='var(--accent-blue)'" onmouseleave="this.style.borderColor='var(--border-color)'">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">${lp.parameter}</div>
+          <div style="font-size:24px;font-weight:700;color:${qColor}">${lp.value != null ? lp.value.toFixed(2) : '--'}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">SP: ${sp} ${lp.uom || ''} ${limText}</div>
+          <div style="font-size:10px;margin-top:4px"><span class="badge" style="background:${qColor}20;color:${qColor};padding:1px 6px;border-radius:3px;font-size:10px">${lp.quality_flag || 'N/A'}</span></div>
+        </div>`;
+      }).join('');
+    } else { lpGrid.innerHTML = '<div style="color:var(--text-muted)">No live parameters</div>'; }
+
+    // Alarms
+    const abody = document.getElementById('wc-alarm-body');
+    if (d.alarms.length) {
+      abody.innerHTML = d.alarms.map(a =>
+        `<tr><td>${a.parameter_name || '--'}</td><td>${a.deviation_value ?? '--'}</td><td>${a.setpoint_value ?? '--'}</td><td>${severityBadge(a.severity)}</td><td style="font-size:11px">${a.timestamp || '--'}</td></tr>`
+      ).join('');
+    } else { abody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted)">No active alarms</td></tr>'; }
+
+    // Environment
+    const envDiv = document.getElementById('env-content');
+    if (d.environmental) {
+      const e = d.environmental;
+      envDiv.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div><div style="font-size:11px;color:var(--text-muted)">Temperature</div><div style="font-size:22px;font-weight:700">${e.temperature_f != null ? e.temperature_f.toFixed(1) + ' &deg;F' : '--'}</div></div>
+          <div><div style="font-size:11px;color:var(--text-muted)">Humidity</div><div style="font-size:22px;font-weight:700">${e.humidity_pct != null ? e.humidity_pct.toFixed(1) + '%' : '--'}</div></div>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:6px">${e.timestamp || ''}</div>`;
+    } else { envDiv.innerHTML = '<span style="color:var(--text-muted)">No environmental data</span>'; }
+
+    // Maintenance
+    const mbody = document.getElementById('wc-maint-body');
+    if (d.maintenance.length) {
+      mbody.innerHTML = d.maintenance.map(m => {
+        const daysUntil = m.next_due ? Math.ceil((new Date(m.next_due) - new Date()) / 86400000) : null;
+        const dueColor = daysUntil != null ? (daysUntil < 0 ? '#ef4444' : daysUntil < 7 ? '#facc15' : '#4ade80') : 'var(--text-muted)';
+        return `<tr><td>${m.equipment_code || m.equipment_id}</td><td>${m.pm_type || '--'}</td><td style="color:${dueColor};font-weight:600">${m.next_due || '--'}</td></tr>`;
+      }).join('');
+    } else { mbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted)">No upcoming PMs</td></tr>'; }
+
+    // Update data flow panel with tracked parameters
+    const flowEl = document.getElementById('flowParams');
+    if (flowEl && d.live_params.length) {
+      flowEl.textContent = d.live_params.map(lp => lp.parameter).join(', ');
+    }
+
+    // Load energy data
+    loadEnergy(wcId);
+    // Load PLC status
+    loadPLC(wcId);
+    // Load spark tests for TEST work centers
+    loadSparkTests(wcId);
+
+    updateTimestamp();
+  } catch (e) { console.error('WC detail error:', e); }
+}
+
+/* ------------------------------------------------------------------ */
+/*  LEVEL 1 — SENSOR DETAIL                                           */
+/* ------------------------------------------------------------------ */
+async function selectSensor(wcId, param) {
+  currentWC    = wcId;
+  currentParam = param;
+  currentLevel = 1;
+  showView(1);
+
+  // Update back button label
+  document.getElementById('sensor-back-btn').textContent = '\u2190 Back to ' + (currentWCName || wcId);
+  document.getElementById('sensor-title').textContent = param + ' \u2014 ' + (currentWCName || wcId);
+  updateBreadcrumb();
+  updateProcessDesc(wcId);
+
+  try {
+    const d = await apiFetch(`/api/scada/sensor/${encodeURIComponent(wcId)}/${encodeURIComponent(param)}`);
+
+    // ---- Build trend chart ----
+    const readings = d.readings || [];
+    const labels   = readings.map(r => r.timestamp);
+    const values   = readings.map(r => r.value);
+    const colors   = readings.map(r => qualityColor(r.quality_flag));
+
+    // Determine reference lines
+    const annotations = {};
+    const sp  = d.setpoint;
+    const spc = d.spc;
+
+    if (sp && sp.setpoint != null) {
+      annotations.setpoint = { type:'line', yMin:sp.setpoint, yMax:sp.setpoint,
+        borderColor:'#4ade80', borderDash:[6,4], borderWidth:2,
+        label:{ display:true, content:'SP '+sp.setpoint, position:'start', backgroundColor:'rgba(74,222,128,0.15)', color:'#4ade80', font:{size:10} }};
+    }
+    if (spc) {
+      if (spc.ucl != null) annotations.ucl = { type:'line', yMin:spc.ucl, yMax:spc.ucl,
+        borderColor:'#ef4444', borderDash:[6,4], borderWidth:1.5,
+        label:{ display:true, content:'UCL '+spc.ucl, position:'start', backgroundColor:'rgba(239,68,68,0.15)', color:'#ef4444', font:{size:10} }};
+      if (spc.cl != null && !annotations.setpoint) annotations.cl = { type:'line', yMin:spc.cl, yMax:spc.cl,
+        borderColor:'#4ade80', borderDash:[6,4], borderWidth:1.5,
+        label:{ display:true, content:'CL '+spc.cl, position:'start', backgroundColor:'rgba(74,222,128,0.15)', color:'#4ade80', font:{size:10} }};
+      if (spc.lcl != null) annotations.lcl = { type:'line', yMin:spc.lcl, yMax:spc.lcl,
+        borderColor:'#ef4444', borderDash:[6,4], borderWidth:1.5,
+        label:{ display:true, content:'LCL '+spc.lcl, position:'start', backgroundColor:'rgba(239,68,68,0.15)', color:'#ef4444', font:{size:10} }};
+      if (spc.usl != null) annotations.usl = { type:'line', yMin:spc.usl, yMax:spc.usl,
+        borderColor:'#ef4444', borderWidth:2,
+        label:{ display:true, content:'USL '+spc.usl, position:'end', backgroundColor:'rgba(239,68,68,0.2)', color:'#ef4444', font:{size:10} }};
+      if (spc.lsl != null) annotations.lsl = { type:'line', yMin:spc.lsl, yMax:spc.lsl,
+        borderColor:'#ef4444', borderWidth:2,
+        label:{ display:true, content:'LSL '+spc.lsl, position:'end', backgroundColor:'rgba(239,68,68,0.2)', color:'#ef4444', font:{size:10} }};
+    }
+
+    // Destroy previous chart if exists
+    if (sensorChart) { sensorChart.destroy(); sensorChart = null; }
+
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    sensorChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: param,
+          data: values,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.1)',
+          pointBackgroundColor: colors,
+          pointBorderColor: colors,
+          pointRadius: readings.length > 80 ? 1.5 : 3,
+          pointHoverRadius: 5,
+          fill: true,
+          tension: 0.25,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        scales: {
+          x: {
+            title: { display:true, text:'Timestamp' },
+            ticks: { maxTicksLimit:12, maxRotation:45, font:{size:10} }
+          },
+          y: { title:{ display:true, text: (sp?.uom || param) } }
+        },
+        plugins: {
+          annotation: { annotations: annotations },
+          legend: { display:false },
+          tooltip: {
+            callbacks: {
+              afterLabel: function(ctx) {
+                const r = readings[ctx.dataIndex];
+                return r ? 'Quality: ' + (r.quality_flag || 'N/A') : '';
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // ---- KPI cards ----
+    const uomStr = sp?.uom || '';
+    document.getElementById('sensor-kpi-uom').textContent = uomStr;
+
+    if (values.length) {
+      const cur = values[values.length - 1];
+      const mn  = Math.min(...values);
+      const mx  = Math.max(...values);
+      animateValue(document.querySelector('#sensor-kpi-current .kpi-value'), 0, cur);
+      animateValue(document.querySelector('#sensor-kpi-min .kpi-value'), 0, mn);
+      animateValue(document.querySelector('#sensor-kpi-max .kpi-value'), 0, mx);
+
+      // % within spec
+      let inSpec = '--';
+      const lo = sp?.lower_limit ?? spc?.lsl;
+      const hi = sp?.upper_limit ?? spc?.usl;
+      if (lo != null && hi != null && values.length) {
+        const cnt = values.filter(v => v >= lo && v <= hi).length;
+        inSpec = (cnt / values.length * 100).toFixed(1);
+        animateValue(document.querySelector('#sensor-kpi-inspec .kpi-value'), 0, parseFloat(inSpec));
+        const inSpecCard = document.getElementById('sensor-kpi-inspec');
+        inSpecCard.className = 'kpi-card ' + (parseFloat(inSpec) >= 95 ? 'green' : parseFloat(inSpec) >= 80 ? 'yellow' : 'red');
+      } else {
+        document.querySelector('#sensor-kpi-inspec .kpi-value').textContent = '--';
+      }
+    }
+
+    if (sp && sp.setpoint != null) {
+      animateValue(document.querySelector('#sensor-kpi-setpoint .kpi-value'), 0, sp.setpoint);
+    } else {
+      document.querySelector('#sensor-kpi-setpoint .kpi-value').textContent = '--';
+    }
+
+    // ---- Collection Config ----
+    const cfgBody = document.getElementById('sensor-config-body');
+    if (d.collection_config) {
+      const c = d.collection_config;
+      cfgBody.innerHTML = `
+        <tr><td style="font-weight:600">Source Level</td><td>${c.source_level || '--'}</td></tr>
+        <tr><td style="font-weight:600">Data Type</td><td>${c.data_type || '--'}</td></tr>
+        <tr><td style="font-weight:600">Frequency</td><td>${c.collection_freq || '--'}</td></tr>
+        <tr><td style="font-weight:600">UOM</td><td>${c.uom || '--'}</td></tr>`;
+    } else { cfgBody.innerHTML = '<tr><td colspan="2" style="color:var(--text-muted)">No config</td></tr>'; }
+
+    // ---- Recent Deviations ----
+    const devBody = document.getElementById('sensor-dev-body');
+    if (d.deviations && d.deviations.length) {
+      devBody.innerHTML = d.deviations.map(dv =>
+        `<tr><td style="font-size:11px">${dv.timestamp || '--'}</td><td>${dv.deviation_value ?? '--'}</td><td>${dv.setpoint_value ?? '--'}</td><td>${severityBadge(dv.severity)}</td><td style="font-size:11px">${dv.corrective_action || '--'}</td></tr>`
+      ).join('');
+    } else { devBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted)">No deviations</td></tr>'; }
+
+    // ---- Readings table ----
+    const rBody = document.getElementById('sensor-readings-body');
+    // Show most recent first in the table
+    const tableReadings = [...readings].reverse();
+    if (tableReadings.length) {
+      rBody.innerHTML = tableReadings.map(r =>
+        `<tr><td style="font-size:11px">${r.timestamp || '--'}</td><td>${r.value != null ? r.value.toFixed(3) : '--'}</td><td><span style="color:${qualityColor(r.quality_flag)}">${r.quality_flag || 'N/A'}</span></td></tr>`
+      ).join('');
+    } else { rBody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted)">No readings</td></tr>'; }
+
+    updateTimestamp();
+  } catch (e) { console.error('Sensor detail error:', e); }
+}
+
+/* ------------------------------------------------------------------ */
+/*  ENERGY + PLC + PROCESS DESC                                        */
+/* ------------------------------------------------------------------ */
+async function loadEnergy(wcId) {
+  try {
+    const d = await apiFetch('/api/scada/energy/' + wcId);
+    document.getElementById('energyKW').textContent = d.current_kw || '--';
+    document.getElementById('energyToday').textContent = fmt(d.kwh_today || 0, 0);
+    document.getElementById('energyKFT').textContent = d.kwh_per_kft || '--';
+    // Compounding uses lb, not ft
+    const wcData = plantData ? plantData.find(w => w.wc_id === wcId) : null;
+    const isCompound = wcData && wcData.wc_type === 'Compound';
+    document.getElementById('energyKFTUnit').textContent = isCompound ? 'kWh/1000lb' : 'kWh/KFT';
+    // Sparkline
+    if (d.trend && d.trend.length > 0) {
+      const canvas = document.getElementById('energySparkline');
+      if (canvas) {
+        new Chart(canvas, {
+          type: 'line',
+          data: { labels: d.trend.map(t => ''), datasets: [{
+            data: d.trend.map(t => t.kw), borderColor: '#3b82f6', borderWidth: 1.5,
+            pointRadius: 0, fill: true, backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.3
+          }]},
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                     scales: { x: { display: false }, y: { display: false } } }
+        });
+      }
+    }
+  } catch(e) { console.error('Energy load error:', e); }
+}
+
+async function loadPLC(wcId) {
+  try {
+    const d = await apiFetch('/api/scada/plc_status/' + wcId);
+    const modeEl = document.getElementById('plcMode');
+    const intEl = document.getElementById('plcInterlock');
+    modeEl.textContent = d.controller_mode;
+    modeEl.className = 'badge ' + (d.controller_mode === 'AUTO' ? 'badge-green' : 'badge-yellow');
+    intEl.textContent = d.interlock_status === 'OK' ? 'INTERLOCK OK' : 'INTERLOCK TRIPPED';
+    intEl.className = 'badge ' + (d.interlock_status === 'OK' ? 'badge-green' : 'badge-red');
+
+    const tb = document.getElementById('plcTable').querySelector('tbody');
+    if (!d.loops || !d.loops.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted)">No control loops configured</td></tr>'; return; }
+    tb.innerHTML = d.loops.map(l => {
+      const errColor = l.error === null ? 'var(--text-muted)' : Math.abs(l.error) > 5 ? '#ef4444' : Math.abs(l.error) > 2 ? '#eab308' : '#22c55e';
+      const intBadge = l.interlock === 'OK' ? '<span class="badge badge-green">OK</span>' : '<span class="badge badge-red">TRIPPED</span>';
+      return `<tr>
+        <td><strong>${l.parameter}</strong></td>
+        <td><span class="badge ${l.mode==='AUTO'?'badge-green':'badge-yellow'}">${l.mode}</span></td>
+        <td>${l.setpoint !== null ? l.setpoint : '--'} ${l.uom || ''}</td>
+        <td style="color:${l.quality_flag==='Bad'?'#ef4444':l.quality_flag==='Suspect'?'#eab308':'var(--text-primary)'}">${l.actual !== null ? l.actual : '--'}</td>
+        <td style="color:${errColor};font-weight:600">${l.error !== null ? (l.error > 0 ? '+' : '') + l.error : '--'}</td>
+        <td>${l.output_pct !== null ? l.output_pct + '%' : '--'}</td>
+        <td>${intBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('PLC load error:', e); }
+}
+
+function updateProcessDesc(wcId) {
+  const descriptions = {
+    'CV': 'PVC/XLPE compound is heated to 350-380\u00b0F and extruded over the conductor through a crosshead die. Temperature controls melt viscosity and flow rate. Line speed (300-3000 fpm) determines insulation wall thickness. Laser micrometer provides continuous OD measurement for SPC.',
+    'PLCV': 'Pressurized Liquid Continuous Vulcanization (PLCV) line applies the overall PVC/XLPE jacket over the assembled cable core under pressure. Temperature (360-380\u00b0F) and line speed control jacket thickness and concentricity. The pressurized curing tube ensures uniform cross-linking. Spark tester performs continuous high-voltage insulation integrity check.',
+    'PX': 'FEP/ETFE fluoropolymer is extruded at 580-600\u00b0F using a pressure-type crosshead. Extremely tight temperature control (\u00b13\u00b0F) required to prevent material degradation. Used for high-temperature (260\u00b0C) rated cables.',
+    'DRAW': 'Copper rod (8-14mm) is pulled through progressively smaller carbide dies to achieve target wire diameter. Tension control prevents wire breakage. Die wear causes gradual diameter drift detectable by CUSUM analysis. Speed: 500-1500 fpm.',
+    'STRAND': 'Multiple drawn wires (7 to 61) are twisted together at controlled lay length to form a stranded conductor. The multi-payoff creel feeds individual wires through a closing die. Lay length (inches per twist) and tension are critical — too tight causes conductor spring-back, too loose reduces flexibility. Speed: 400-800 fpm.',
+    'COMPOUND': 'Raw PVC resin, plasticizer, stabilizer, and colorant are mixed in a Banbury-type internal mixer at 300-350\u00b0F. Output is measured in pounds (lb), not feet \u2014 typical batch size 200-500 lb at 600-800 lb/hr. Mix time, temperature profile, and rotor speed control compound homogeneity. Shelf life of mixed compound is 24-72 hours depending on formulation. Batch-to-batch consistency affects downstream extrusion quality.',
+    'BRAID': 'Tinned copper or aluminum wires are braided over insulated conductors at high speed. Braid angle and coverage percentage (85-95%) are controlled by carrier count and machine RPM. Shield effectiveness depends on consistent coverage.',
+    'CABLE': 'Individual insulated conductors are assembled (cabled) together with fillers and binders. Lay length and direction (S or Z twist) are controlled by machine speed ratios. Assembly tension must be uniform to prevent conductor migration.',
+    'ARMOR': 'Steel or aluminum armor strip/wire is applied helically over the cable jacket. Coverage, overlap, and tension are critical for mechanical protection rating. Armor OD measured continuously.',
+    'TEST': 'Finished cable passes through spark tester (AC/DC high voltage applied to insulation), DC resistance bridge (conductor continuity), and dimensional gauge (OD verification). Any fault triggers automatic line stop and lot hold.',
+    'CUT': 'Cable is measured by encoder wheel and cut to customer-specified lengths. Footage accuracy (\u00b10.1%) is critical for billing and inventory. Remnant management tracks partial reels.',
+    'PACK': 'Finished reels are labeled (print marking verified), wrapped, palletized, and staged for shipment. Reel labels include product ID, lot number, footage, test results, and certifications.',
+    'FOIL': 'Aluminum foil with polyester backing is applied longitudinally over insulated conductors with overlap. Shields against electromagnetic interference (EMI). Drain wire provides ground path.',
+    'TAPE': 'Mylar or polyester tape is helically wrapped over cable components for separation, identification, or mechanical protection.',
+    'PT': 'Optical fiber is drawn from preform at high temperature and coated with UV-curable acrylate. Fiber diameter (125\u03bcm) controlled to \u00b11\u03bcm. Draw speed affects fiber strength.',
+  };
+  const desc = document.getElementById('processDesc');
+  const card = document.getElementById('processDescCard');
+  if (!desc || !card) return;
+  // Match WC prefix
+  const prefix = wcId.replace(/-\d+$/, '').replace(/-.*/, '');
+  const text = descriptions[prefix] || descriptions[wcId] || 'Physical manufacturing process at this work center.';
+  desc.textContent = text;
+  card.style.display = 'block';
+}
+
+/* ------------------------------------------------------------------ */
+/*  INIT                                                               */
+/* ------------------------------------------------------------------ */
+async function loadSparkTests(wcId) {
+  const card = document.getElementById('sparkTestCard');
+  // Only show for TEST work centers
+  if (!wcId.startsWith('TEST')) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  try {
+    const d = await apiFetch('/api/scada/spark_tests/' + wcId);
+    document.getElementById('sparkPassBadge').textContent = d.pass_rate + '% pass (' + d.total_tests + ' tests)';
+    document.getElementById('sparkPassBadge').className = 'badge ' + (d.pass_rate >= 98 ? 'badge-green' : d.pass_rate >= 95 ? 'badge-yellow' : 'badge-red');
+    const tb = document.querySelector('#sparkTestTable tbody');
+    tb.innerHTML = (d.tests || []).slice(0, 20).map(t => {
+      const rc = t.result === 'PASS' ? 'green' : 'red';
+      return `<tr><td>${t.reel_id || '-'}</td><td>${t.wo_id || '-'}</td><td>${t.voltage_kv} kV</td><td><span class="badge badge-${rc}">${t.result}</span></td><td>${t.footage_at_fault_ft || '-'}</td><td>${(t.timestamp || '').substring(0, 16)}</td></tr>`;
+    }).join('') || '<tr><td colspan="6" style="color:var(--text-muted)">No tests</td></tr>';
+  } catch (e) { card.style.display = 'none'; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadPlantOverview();
+  // Auto-refresh plant overview every 5 seconds (only when at Level 3)
+  setInterval(() => { if (currentLevel === 3) { loadPlantOverview(); } }, 5000);
+});
+</script>
+{% endblock %}

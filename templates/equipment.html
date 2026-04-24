@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+{% set active_page = "equipment" %}
+{% block title %}F9 Maintenance — SodhiCable MES{% endblock %}
+{% block content %}
+<script>document.body.dataset.tour='equipment'</script>
+<h1 class="page-title">F9 — Maintenance Management</h1>
+<p class="page-subtitle">Equipment inventory, MTBF/MTTR reliability, PM compliance, downtime analysis, predictive maintenance</p>
+
+<!-- Single Global Filter Bar -->
+<div class="control-panel"><div class="control-row">
+ <div class="control-group"><label>Work Center</label>
+  <select id="f9WcFilter" onchange="applyF9()"><option value="">All Work Centers</option></select></div>
+ <div class="control-group"><label>Equipment</label>
+  <select id="f9EqFilter" onchange="applyF9()" style="width:200px"><option value="">All Equipment</option></select></div>
+ <div class="control-group"><label>From</label>
+  <input type="date" id="f9DateFrom" onchange="applyF9()"></div>
+ <div class="control-group"><label>To</label>
+  <input type="date" id="f9DateTo" onchange="applyF9()"></div>
+ <button class="btn" onclick="resetF9()" style="margin-top:18px">Clear</button>
+ <span id="f9FilterStatus" style="margin-top:20px;font-size:11px;color:var(--accent-gold)"></span>
+</div></div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+ <div class="kpi-card" id="kpiMtbfCard"><div class="kpi-label">MTBF</div><div class="kpi-value" id="kpiMtbf">--</div><span class="kpi-unit">hrs</span><div class="kpi-target">Mean Time Between Failures</div></div>
+ <div class="kpi-card" id="kpiMttrCard"><div class="kpi-label">MTTR</div><div class="kpi-value" id="kpiMttr">--</div><span class="kpi-unit">hrs</span><div class="kpi-target">Mean Time To Repair</div></div>
+ <div class="kpi-card" id="kpiPMCard"><div class="kpi-label">PM Compliance</div><div class="kpi-value" id="kpiPM">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 95%</div></div>
+ <div class="kpi-card blue" id="kpiCountCard"><div class="kpi-label">Equipment</div><div class="kpi-value" id="kpiCount">--</div><span class="kpi-unit">assets</span><div class="kpi-target">Active in plant</div></div>
+ <div class="kpi-card" id="kpiOverdueCard"><div class="kpi-label">PM Overdue</div><div class="kpi-value" id="kpiOverdue">--</div><span class="kpi-unit">items</span><div class="kpi-target">Requires immediate attention</div></div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-downtime">Downtime Analysis</button>
+ <button class="tab-btn" data-tab="tab-predictive">Predictive Maintenance</button>
+ <button class="tab-btn" data-tab="tab-equipment">Equipment Inventory</button>
+ <button class="tab-btn" data-tab="tab-pm">PM Schedule</button>
+</div>
+
+<!-- ═══ DOWNTIME ANALYSIS TAB ═══ -->
+<div class="tab-content active" id="tab-downtime">
+ <div class="chart-grid">
+  <div class="chart-card"><h3>Downtime Pareto (by Category)</h3><div class="chart-container"><canvas id="paretoChart"></canvas></div></div>
+  <div class="chart-card"><h3>Downtime by Work Center</h3><div class="chart-container"><canvas id="wcDowntimeChart"></canvas></div></div>
+ </div>
+</div>
+
+<!-- ═══ PREDICTIVE MAINTENANCE TAB ═══ -->
+<div class="tab-content" id="tab-predictive">
+ <div class="chart-card" style="margin-bottom:16px">
+  <h3>Weibull / Exponential CDF — Failure Probability Over Time</h3>
+  <p style="color:var(--text-muted);font-size:12px;margin:-4px 0 12px;line-height:1.6">
+    <strong>What this shows:</strong> Each curve is the probability that a piece of equipment will fail before operating hour <em>t</em>.
+    Steeper curves = less reliable equipment needing earlier PM.
+    The green dashed line at 10% is the typical PM scheduling target — equipment should be serviced before reaching that threshold.<br>
+    <strong>Weibull shape (beta):</strong> beta &gt; 1 = wear-out failures (increasing hazard — schedule PM aggressively), beta = 1 = random failures (exponential), beta &lt; 1 = infant mortality.<br>
+    <strong>After a PM:</strong> The clock resets to t=0. A completed PM effectively moves the equipment back to the left side of its curve, restarting the failure probability from near zero.
+    This is why PM interval = the <em>t</em> value where the curve crosses your acceptable risk threshold (e.g., 10%).
+  </p>
+  <div class="chart-container"><canvas id="cdfChart"></canvas></div>
+ </div>
+ <div class="kpi-grid" id="riskCards" style="margin-bottom:16px"></div>
+ <div class="chart-card">
+  <h3>Predicted Remaining Useful Life & PM Recommendations</h3>
+  <div style="max-height:400px;overflow-y:auto">
+  <table class="data-table" id="predPmTable" style="font-size:11px">
+   <thead><tr><th>Equipment</th><th>Work Center</th><th>7-Day Fail %</th><th>MTBF (days)</th><th>RUL (days)</th><th>Days Since PM</th><th>Model</th><th>Risk</th></tr></thead>
+   <tbody></tbody>
+  </table>
+  </div>
+ </div>
+</div>
+
+<!-- ═══ EQUIPMENT INVENTORY TAB ═══ -->
+<div class="tab-content" id="tab-equipment">
+ <div class="chart-card">
+  <h3>Equipment Master List (<span id="eqCount">0</span> items)</h3>
+  <div style="max-height:500px;overflow-y:auto">
+   <table class="data-table" id="equipTable">
+    <thead><tr><th>Code</th><th>Description</th><th>Work Center</th><th>Type</th><th>Manufacturer</th><th>Installed</th><th>Status</th><th>Cal Due</th><th>Cal Status</th></tr></thead>
+    <tbody><tr><td colspan="9" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+   </table>
+  </div>
+ </div>
+</div>
+
+<!-- ═══ PM SCHEDULE TAB ═══ -->
+<div class="tab-content" id="tab-pm">
+ <div class="chart-card">
+  <h3>Upcoming Preventive Maintenance</h3>
+  <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px">
+    Sorted by due date. Click <strong>Complete PM</strong> to record the maintenance, reset the failure clock, and schedule the next PM.
+  </p>
+  <div style="max-height:500px;overflow-y:auto">
+   <table class="data-table" id="pmTable">
+    <thead><tr><th>Equipment</th><th>Work Center</th><th>Freq</th><th>Last PM</th><th>Next Due</th><th>Days</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody><tr><td colspan="8" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+   </table>
+  </div>
+ </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allEquipment = [];
+let allRulData = [];
+let predChart = null;
+let _activeTab = 'tab-downtime';
+
+// ── Single filter query string builder ──────────────────────────
+function f9Params() {
+  const wc = document.getElementById('f9WcFilter').value;
+  const eq = document.getElementById('f9EqFilter').value;
+  const df = document.getElementById('f9DateFrom').value;
+  const dt = document.getElementById('f9DateTo').value;
+  const parts = [];
+  if (wc) parts.push('wc_id=' + wc);
+  if (eq) parts.push('equipment_id=' + encodeURIComponent(eq));
+  if (df) parts.push('date_from=' + encodeURIComponent(df));
+  if (dt) parts.push('date_to=' + encodeURIComponent(dt));
+  const label = document.getElementById('f9FilterStatus');
+  if (label) label.textContent = parts.length ? 'Filtered (' + parts.length + ')' : '';
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
+function resetF9() {
+  ['f9WcFilter','f9EqFilter','f9DateFrom','f9DateTo'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('f9FilterStatus').textContent = '';
+  applyF9();
+}
+
+function applyF9() {
+  // Reload whatever tab is active
+  if (_activeTab === 'tab-downtime') loadDowntime();
+  else if (_activeTab === 'tab-predictive') loadPredictive();
+  else if (_activeTab === 'tab-equipment') loadEquipmentTab();
+  else if (_activeTab === 'tab-pm') loadEquipmentTab();
+}
+
+function statusBadge(status) {
+  const c = status === 'OVERDUE' ? 'red' : status === 'DUE SOON' ? 'yellow' : 'green';
+  return `<span class="badge badge-${c}">${status}</span>`;
+}
+
+// ── Populate dropdowns on init ──────────────────────────────────
+async function populateF9Dropdowns() {
+  try {
+    const wcData = await apiFetch('/api/equipment/work_centers');
+    const wcSel = document.getElementById('f9WcFilter');
+    wcData.forEach(w => {
+      const o = document.createElement('option');
+      o.value = w.wc_id; o.textContent = w.wc_id + ' — ' + (w.name || '');
+      wcSel.appendChild(o);
+    });
+  } catch(e) {}
+  try {
+    const eqData = await apiFetch('/api/equipment/status');
+    const eqs = Array.isArray(eqData) ? eqData : (eqData.equipment || []);
+    allEquipment = eqs;
+    const eqSel = document.getElementById('f9EqFilter');
+    eqs.forEach(e => {
+      const o = document.createElement('option');
+      o.value = e.equipment_code; o.textContent = e.equipment_code + ' — ' + (e.description || '');
+      eqSel.appendChild(o);
+    });
+    // Set KPIs from full equipment list
+    updateEquipKPIs(eqs);
+  } catch(e) {}
+}
+
+function updateEquipKPIs(rows) {
+  document.getElementById('kpiCount').textContent = rows.length;
+  document.getElementById('kpiCountCard').className = 'kpi-card blue';
+  const today = new Date();
+  let overdue = 0, compliant = 0;
+  rows.forEach(r => {
+    if (r.next_due) {
+      if (new Date(r.next_due) < today) overdue++; else compliant++;
+    } else compliant++;
+  });
+  document.getElementById('kpiOverdue').textContent = overdue;
+  document.getElementById('kpiOverdueCard').className = 'kpi-card ' + (overdue > 3 ? 'red' : overdue > 0 ? 'yellow' : 'green');
+  const pmPct = rows.length ? ((compliant / rows.length) * 100) : 0;
+  document.getElementById('kpiPM').textContent = pmPct.toFixed(1);
+  document.getElementById('kpiPMCard').className = 'kpi-card ' + (pmPct >= 95 ? 'green' : pmPct >= 85 ? 'yellow' : 'red');
+}
+
+// ── DOWNTIME TAB ────────────────────────────────────────────────
+async function loadDowntime() {
+  try {
+    const data = await apiFetch('/api/equipment/downtime' + f9Params());
+    const rows = Array.isArray(data) ? data : (data.events || []);
+
+    // Update MTBF/MTTR KPIs
+    const totalDownMin = rows.reduce((s, r) => s + (r.duration_min || 0), 0);
+    const mttr = rows.length ? totalDownMin / rows.length / 60 : 0;
+    document.getElementById('kpiMttr').textContent = fmt(mttr, 1);
+    document.getElementById('kpiMttrCard').className = 'kpi-card ' + (mttr > 2 ? 'red' : mttr > 1 ? 'yellow' : 'green');
+    const operatingHrs = 14 * 24 * 13;
+    const mtbf = rows.length ? (operatingHrs - totalDownMin / 60) / rows.length : 0;
+    document.getElementById('kpiMtbf').textContent = fmt(mtbf, 1);
+    document.getElementById('kpiMtbfCard').className = 'kpi-card ' + (mtbf > 100 ? 'green' : mtbf > 50 ? 'yellow' : 'red');
+
+    if (typeof Chart === 'undefined' || !rows.length) return;
+
+    const pc = Chart.getChart('paretoChart'); if (pc) pc.destroy();
+    const wcc = Chart.getChart('wcDowntimeChart'); if (wcc) wcc.destroy();
+
+    const catMap = {};
+    rows.forEach(r => { catMap[r.category || 'Unknown'] = (catMap[r.category || 'Unknown'] || 0) + (r.duration_min || 0); });
+    const catEntries = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+    const lc = {Breakdown:'#ef4444',Setup:'#f59e0b',MaterialWait:'#eab308',QualityHold:'#8b5cf6',PM:'#3b82f6',NoOrders:'#64748b'};
+    new Chart(document.getElementById('paretoChart'), {
+      type:'bar', data:{ labels:catEntries.map(e=>e[0]),
+        datasets:[{label:'Downtime (min)',data:catEntries.map(e=>e[1]),backgroundColor:catEntries.map(e=>lc[e[0]]||'#475569')}]
+      }, options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{title:{display:true,text:'Total Downtime (min)'}}}}
+    });
+
+    const wcMap = {};
+    rows.forEach(r => { wcMap[r.wc_id || 'Unknown'] = (wcMap[r.wc_id || 'Unknown'] || 0) + (r.duration_min || 0); });
+    const wcEntries = Object.entries(wcMap).sort((a, b) => b[1] - a[1]);
+    new Chart(document.getElementById('wcDowntimeChart'), {
+      type:'bar', data:{ labels:wcEntries.map(e=>e[0]),
+        datasets:[{label:'Downtime (min)',data:wcEntries.map(e=>e[1]),backgroundColor:'#f59e0b'}]
+      }, options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:'Minutes'}}}}
+    });
+  } catch(e) { console.error('Downtime error:', e); }
+}
+
+// ── PREDICTIVE TAB ──────────────────────────────────────────────
+async function loadPredictive() {
+  try {
+    // Always re-fetch — PM completions change the data
+    const data = await apiFetch('/api/ai/rul_maintenance');
+    allRulData = Array.isArray(data) ? data : [];
+    let items = [...allRulData];
+
+    // Apply global filters
+    const wcFilter = document.getElementById('f9WcFilter').value;
+    const eqFilter = document.getElementById('f9EqFilter').value;
+    if (wcFilter) items = items.filter(e => e.work_center_id === wcFilter);
+    if (eqFilter) items = items.filter(e => e.equipment_code === eqFilter);
+
+    // CDF Chart
+    if (predChart) predChart.destroy();
+    predChart = null;
+    const cdfCanvas = document.getElementById('cdfChart');
+    // Prioritize equipment with real failure data (Weibull), then show others
+    const withFailures = items.filter(e => e.failure_count > 0 && (e.weibull_eta_hours || 0) > 0);
+    const withoutFailures = items.filter(e => e.failure_count === 0 && (e.weibull_eta_hours || 0) > 0);
+    // Show all equipment with real data, plus fill to 12 with defaults if filtered
+    const forCdf = withFailures.length ? withFailures.slice(0, 12) :
+                   withoutFailures.slice(0, 8);
+    if (cdfCanvas && forCdf.length) {
+      const colors = ['#2563eb','#dc2626','#16a34a','#9333ea','#f59e0b','#0891b2','#be185d','#64748b','#ea580c','#4f46e5'];
+      const maxHrs = Math.max(...forCdf.map(e => (e.weibull_eta_hours || 1080) * 2.5));
+      const timePoints = Array.from({length:50}, (_,i) => Math.round((i+1) * maxHrs / 50));
+      const datasets = forCdf.map((e, i) => ({
+        label: e.equipment_code + (e.model === 'Weibull' ? ' (W)' : ' (Exp)'),
+        data: timePoints.map(t => {
+          const beta = e.weibull_beta || 1;
+          const eta = e.weibull_eta_hours || 1080;
+          return +(1 - Math.exp(-Math.pow(t / eta, beta))).toFixed(4);
+        }),
+        borderColor: colors[i % colors.length],
+        fill: false, tension: 0.4, pointRadius: 0, borderWidth: 2,
+      }));
+      predChart = new Chart(cdfCanvas, {
+        type: 'line',
+        data: { labels: timePoints.map(t => t.toLocaleString()), datasets },
+        options: { responsive: true, maintainAspectRatio: false,
+          scales: {
+            y: { title: { display: true, text: 'F(t) — Cumulative Failure Probability' }, min: 0, max: 1 },
+            x: { title: { display: true, text: 'Operating Hours Since Last PM' }, ticks: { maxTicksLimit: 10 } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
+            annotation: { annotations: {
+              pmLine: { type: 'line', yMin: 0.1, yMax: 0.1, borderColor: '#22c55e', borderDash: [6,3], borderWidth: 1,
+                label: { display: true, content: '10% failure (PM target)', position: 'start', font: { size: 9 }, color: '#22c55e', backgroundColor: 'transparent' } }
+            }}
+          }
+        }
+      });
+    } else if (cdfCanvas) {
+      predChart = new Chart(cdfCanvas, {
+        type: 'line', data: { labels: ['No equipment data'], datasets: [{ data: [0], borderColor: '#334155' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 1 } } }
+      });
+    }
+
+    // Risk KPI cards
+    const rc = document.getElementById('riskCards');
+    const topRisk = items.sort((a,b) => (b.prob_fail_7day||0) - (a.prob_fail_7day||0)).slice(0, 6);
+    rc.innerHTML = topRisk.map(e => {
+      const fp = e.prob_fail_7day || 0;
+      const col = e.risk_level === 'Critical' ? 'red' : e.risk_level === 'Warning' ? 'yellow' : 'green';
+      return `<div class="kpi-card ${col}" style="padding:8px">
+        <div class="kpi-label" style="font-size:10px">${e.equipment_code}</div>
+        <div class="kpi-value" style="font-size:18px">${(fp*100).toFixed(1)}%</div>
+        <div style="font-size:9px;color:var(--text-muted)">7-day fail | RUL ${e.rul_days}d | ${e.model}</div>
+      </div>`;
+    }).join('');
+
+    // Table
+    const tb = document.getElementById('predPmTable').querySelector('tbody');
+    const sorted = items.sort((a,b) => a.rul_days - b.rul_days);
+    if (sorted.length) {
+      tb.innerHTML = sorted.map(e => {
+        const badgeCol = e.risk_level === 'Critical' ? 'badge-red' : e.risk_level === 'Warning' ? 'badge-yellow' : 'badge-green';
+        return `<tr>
+          <td><strong>${e.equipment_code}</strong> — ${e.description || ''}</td>
+          <td>${e.work_center_id || ''}</td>
+          <td>${((e.prob_fail_7day||0) * 100).toFixed(1)}%</td>
+          <td>${e.weibull_eta_hours ? (e.weibull_eta_hours / 24).toFixed(0) : '—'}</td>
+          <td>${e.rul_days}</td>
+          <td>${e.days_since_pm}</td>
+          <td>${e.model || '—'}</td>
+          <td><span class="badge ${badgeCol}">${e.risk_level}</span></td>
+        </tr>`;
+      }).join('');
+    } else {
+      tb.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted)">No equipment matches filters</td></tr>';
+    }
+  } catch(e) { console.error('Predictive error:', e); }
+}
+
+// ── EQUIPMENT + PM TABS ─────────────────────────────────────────
+async function loadEquipmentTab() {
+  const wc = document.getElementById('f9WcFilter').value;
+  const qs = wc ? '?wc_id=' + wc : '';
+  try {
+    const data = await apiFetch('/api/equipment/status' + qs);
+    const rows = Array.isArray(data) ? data : (data.equipment || []);
+    allEquipment = rows;
+    updateEquipKPIs(rows);
+
+    // Equipment table
+    const eq = document.getElementById('f9EqFilter').value;
+    let filtered = rows;
+    if (eq) filtered = filtered.filter(r => r.equipment_code === eq);
+
+    document.getElementById('eqCount').textContent = filtered.length;
+    const today = new Date();
+    const soon = new Date(); soon.setDate(soon.getDate() + 14);
+    const tb = document.getElementById('equipTable').querySelector('tbody');
+    tb.innerHTML = filtered.length ? filtered.map(r => {
+      let calStatus = r.calibration_due ? (new Date(r.calibration_due) < today ? 'OVERDUE' : new Date(r.calibration_due) < soon ? 'DUE SOON' : 'OK') : 'N/A';
+      return `<tr>
+        <td><strong>${r.equipment_code || ''}</strong></td><td>${r.description || ''}</td>
+        <td>${r.work_center_id || ''}</td><td>${r.equipment_type || ''}</td>
+        <td>${r.manufacturer || ''}</td><td>${r.install_date || ''}</td>
+        <td><span class="badge badge-${r.status==='Active'?'green':'yellow'}">${r.status || ''}</span></td>
+        <td>${r.calibration_due || '—'}</td>
+        <td>${calStatus !== 'N/A' ? statusBadge(calStatus) : '<span style="color:var(--text-muted)">N/A</span>'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="9" style="color:var(--text-muted)">No equipment matches filter</td></tr>';
+
+    // PM Schedule
+    const pmRows = filtered.filter(r => r.next_due).sort((a, b) => (a.next_due || '').localeCompare(b.next_due || ''));
+    const ptb = document.getElementById('pmTable').querySelector('tbody');
+    if (!pmRows.length) { ptb.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted)">No PM data</td></tr>'; return; }
+    ptb.innerHTML = pmRows.map(r => {
+      const du = r.next_due ? Math.ceil((new Date(r.next_due) - today) / 86400000) : null;
+      const st = du === null ? 'N/A' : du < 0 ? 'OVERDUE' : du < 7 ? 'DUE SOON' : 'OK';
+      const dc = du !== null && du < 0 ? '#ef4444' : du !== null && du < 7 ? '#eab308' : 'var(--text-primary)';
+      const actionBtn = (st === 'OVERDUE' || st === 'DUE SOON')
+        ? `<button class="btn btn-success" style="padding:3px 8px;font-size:10px" onclick="completePM(${r.equipment_id},'${r.equipment_code}')">Complete PM</button>`
+        : `<span style="color:var(--text-muted);font-size:10px">Scheduled</span>`;
+      return `<tr>
+        <td><strong>${r.equipment_code || ''}</strong> — ${r.description || ''}</td>
+        <td>${r.work_center_id || ''}</td>
+        <td>${r.frequency_days ? r.frequency_days + 'd' : '—'}</td>
+        <td>${r.last_performed || r.last_pm_date || '—'}</td><td>${r.next_due || '—'}</td>
+        <td style="color:${dc};font-weight:600">${du !== null ? du : '—'}</td><td>${statusBadge(st)}</td>
+        <td>${actionBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('Equipment error:', e); }
+}
+
+// ── COMPLETE PM ─────────────────────────────────────────────────
+async function completePM(equipmentId, equipmentCode) {
+  if (!confirm(`Complete PM on ${equipmentCode}?\n\nThis will:\n• Record maintenance as complete\n• Reset the failure probability clock\n• Schedule the next PM based on frequency\n• Log PM downtime`)) return;
+
+  try {
+    const result = await apiPost('/api/equipment/complete_pm', {
+      equipment_id: equipmentId,
+      duration_min: 60,
+      technician: 'Operator',
+      notes: 'PM completed via F9 dashboard',
+    });
+    showToast(result.message || `PM completed on ${equipmentCode}`, 'success');
+    // Reload active tab and clear RUL cache so CDF updates
+    allRulData = [];
+    applyF9();
+  } catch(e) {
+    showToast('Failed to complete PM: ' + e.message, 'error');
+  }
+}
+
+// ── INIT ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await populateF9Dropdowns();
+  loadDowntime(); // default tab
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _activeTab = btn.dataset.tab;
+      if (_activeTab === 'tab-downtime') loadDowntime();
+      else if (_activeTab === 'tab-predictive') loadPredictive();
+      else if (_activeTab === 'tab-equipment' || _activeTab === 'tab-pm') loadEquipmentTab();
+    });
+  });
+});
+</script>
+{% endblock %}

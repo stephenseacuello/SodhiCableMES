@@ -1,0 +1,305 @@
+{% extends "base.html" %}{% set active_page = "workorders" %}
+{% block title %}Work Order Detail — {{ wo_id }}{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+  <h1 class="page-title" style="margin-bottom:0">Work Order Detail — <span id="woIdTitle">{{ wo_id }}</span></h1>
+  <a href="/workorders" class="btn" style="background:var(--bg-secondary);color:var(--text-secondary)">← Back to Work Orders</a>
+</div>
+
+<!-- Header Card -->
+<div class="chart-card" id="headerCard" style="margin-bottom:16px">
+ <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">WO ID</span><div style="font-size:22px;font-weight:700;color:var(--accent-blue)" id="hdrWoId">{{ wo_id }}</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Product</span><div style="font-size:15px;font-weight:600" id="hdrProduct">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Family</span><div id="hdrFamily">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">AWG</span><div id="hdrAwg">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Qty (KFT)</span><div style="font-size:16px;font-weight:600" id="hdrQty">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Priority</span><div id="hdrPriority">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Business Unit</span><div id="hdrBU">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Due Date</span><div id="hdrDue">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Status</span><div id="hdrStatus">--</div></div>
+  <div><span style="font-size:10px;text-transform:uppercase;color:var(--text-muted)">Created</span><div id="hdrCreated">--</div></div>
+ </div>
+</div>
+
+<!-- Status Timeline -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3 style="margin-bottom:12px">Status Timeline</h3>
+ <div id="statusTimeline" style="display:flex;align-items:center;gap:0;width:100%">
+  <div class="tl-step" id="tlPending" style="flex:1;text-align:center">
+   <div class="tl-dot" style="width:24px;height:24px;border-radius:50%;margin:0 auto 4px;background:var(--bg-secondary);border:2px solid var(--border-color)"></div>
+   <div style="font-size:11px;font-weight:600">Pending</div>
+  </div>
+  <div class="tl-bar" style="flex:2;height:4px;background:var(--bg-secondary);border-radius:2px;margin:0 -8px"></div>
+  <div class="tl-step" id="tlInProcess" style="flex:1;text-align:center">
+   <div class="tl-dot" style="width:24px;height:24px;border-radius:50%;margin:0 auto 4px;background:var(--bg-secondary);border:2px solid var(--border-color)"></div>
+   <div style="font-size:11px;font-weight:600">InProcess</div>
+  </div>
+  <div class="tl-bar" style="flex:2;height:4px;background:var(--bg-secondary);border-radius:2px;margin:0 -8px"></div>
+  <div class="tl-step" id="tlComplete" style="flex:1;text-align:center">
+   <div class="tl-dot" style="width:24px;height:24px;border-radius:50%;margin:0 auto 4px;background:var(--bg-secondary);border:2px solid var(--border-color)"></div>
+   <div style="font-size:11px;font-weight:600">Complete</div>
+  </div>
+ </div>
+</div>
+
+<!-- Operations Table -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Operations</h3>
+ <div style="max-height:400px;overflow-y:auto">
+  <table class="data-table" id="opsTable">
+   <thead><tr><th>Step</th><th>Work Center</th><th>Operation</th><th>Status</th><th>Setup (min)</th><th>Run (min)</th><th>Qty Good</th><th>Qty Scrap</th></tr></thead>
+   <tbody><tr><td colspan="8" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+
+<!-- Quality Section -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Quality</h3>
+
+ <h4 style="margin:12px 0 6px;font-size:13px;color:var(--accent-gold);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border-color);padding-bottom:4px">NCRs (Non-Conformance Reports)</h4>
+ <div style="max-height:250px;overflow-y:auto">
+  <table class="data-table" id="ncrTable">
+   <thead><tr><th>NCR ID</th><th>Defect Type</th><th>Severity</th><th>Status</th><th>Reported</th></tr></thead>
+   <tbody><tr><td colspan="5" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+
+ <h4 style="margin:16px 0 6px;font-size:13px;color:var(--accent-gold);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border-color);padding-bottom:4px">Test Results</h4>
+ <div style="max-height:250px;overflow-y:auto">
+  <table class="data-table" id="testsTable">
+   <thead><tr><th>Type</th><th>Pass/Fail</th><th>Value</th><th>Date</th></tr></thead>
+   <tbody><tr><td colspan="4" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+
+ <h4 style="margin:16px 0 6px;font-size:13px;color:var(--accent-gold);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border-color);padding-bottom:4px">Holds</h4>
+ <div style="max-height:250px;overflow-y:auto">
+  <table class="data-table" id="holdsTable">
+   <thead><tr><th>Hold Reason</th><th>Held Date</th><th>Hold Status</th><th>Disposition</th><th>Released Date</th></tr></thead>
+   <tbody><tr><td colspan="5" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+
+<!-- Genealogy Section -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Genealogy / Lot Tracking</h3>
+ <div style="max-height:300px;overflow-y:auto">
+  <table class="data-table" id="lotsTable">
+   <thead><tr><th>Output Lot</th><th>Input Lot</th><th>Qty Consumed</th><th>Tier Level</th><th>Transaction Time</th></tr></thead>
+   <tbody><tr><td colspan="5" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+
+<!-- Scrap Section -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Scrap</h3>
+ <div style="max-height:300px;overflow-y:auto">
+  <table class="data-table" id="scrapTable">
+   <thead><tr><th>Cause</th><th>Quantity (ft)</th><th>Cost ($)</th><th>Disposition</th><th>Timestamp</th></tr></thead>
+   <tbody><tr><td colspan="5" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+
+<!-- Audit Trail -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Audit Trail</h3>
+ <div style="max-height:300px;overflow-y:auto">
+  <table class="data-table" id="auditTable">
+   <thead><tr><th>Field Changed</th><th>Old Value</th><th>New Value</th><th>Date/Time</th><th>Reason</th></tr></thead>
+   <tbody><tr><td colspan="5" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+const statusColors = {Pending:'gray', Released:'blue', InProcess:'yellow', QCHold:'red', Complete:'green', Cancelled:'gray', 'On Hold':'red'};
+const statusOrder = ['Pending', 'InProcess', 'Complete'];
+
+function badge(text, color) {
+  return `<span class="badge badge-${color || 'gray'}">${text || '--'}</span>`;
+}
+
+function emptyRow(cols, msg) {
+  return `<tr><td colspan="${cols}" style="color:var(--text-muted);text-align:center">${msg || 'None'}</td></tr>`;
+}
+
+function highlightTimeline(status) {
+  const activeColor = '#3b82f6';
+  const completeColor = '#22c55e';
+  const steps = ['Pending', 'InProcess', 'Complete'];
+  const idx = steps.indexOf(status);
+  // If status not in these three (e.g. On Hold, Cancelled), highlight up to last known
+  const effectiveIdx = idx >= 0 ? idx : (status === 'Complete' ? 2 : status === 'InProcess' ? 1 : 0);
+
+  steps.forEach((s, i) => {
+    const el = document.getElementById('tl' + s);
+    if (!el) return;
+    const dot = el.querySelector('.tl-dot');
+    if (i < effectiveIdx) {
+      dot.style.background = completeColor;
+      dot.style.borderColor = completeColor;
+    } else if (i === effectiveIdx) {
+      dot.style.background = activeColor;
+      dot.style.borderColor = activeColor;
+      dot.style.boxShadow = '0 0 8px ' + activeColor;
+    }
+  });
+  // Highlight bars
+  const bars = document.querySelectorAll('.tl-bar');
+  bars.forEach((bar, i) => {
+    if (i < effectiveIdx) bar.style.background = completeColor;
+  });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const data = await apiFetch('/api/workorders/{{ wo_id }}');
+    const wo = data.work_order || {};
+
+    // Header
+    document.getElementById('hdrWoId').textContent = wo.wo_id || '{{ wo_id }}';
+    document.getElementById('hdrProduct').textContent = wo.product_name || wo.product_id || '--';
+    document.getElementById('hdrFamily').innerHTML = badge(wo.family, 'blue');
+    document.getElementById('hdrAwg').textContent = wo.awg || '--';
+    document.getElementById('hdrQty').textContent = wo.order_qty_kft != null ? fmt(wo.order_qty_kft, 1) : '--';
+    document.getElementById('hdrPriority').textContent = wo.priority || '--';
+    document.getElementById('hdrBU').textContent = wo.business_unit || '--';
+    document.getElementById('hdrDue').textContent = wo.due_date || '--';
+    const sc = statusColors[wo.status] || 'gray';
+    document.getElementById('hdrStatus').innerHTML = badge(wo.status, sc);
+    document.getElementById('hdrCreated').textContent = wo.created_date || '--';
+
+    // Timeline
+    highlightTimeline(wo.status || 'Pending');
+
+    // Operations
+    const ops = data.operations || [];
+    const opsBody = document.querySelector('#opsTable tbody');
+    if (ops.length === 0) {
+      opsBody.innerHTML = emptyRow(8, 'No operations found');
+    } else {
+      opsBody.innerHTML = ops.map(o => {
+        const oc = statusColors[o.status] || 'gray';
+        return `<tr>
+          <td class="number">${o.step_sequence || '--'}</td>
+          <td>${o.wc_name || o.wc_id || '--'}</td>
+          <td>${o.operation_name || o.op_name || '--'}</td>
+          <td>${badge(o.status, oc)}</td>
+          <td class="number">${o.setup_time_min != null ? fmt(o.setup_time_min, 1) : '--'}</td>
+          <td class="number">${o.run_time_min != null ? fmt(o.run_time_min, 1) : '--'}</td>
+          <td class="number">${o.qty_good != null ? fmt(o.qty_good) : '--'}</td>
+          <td class="number">${o.qty_scrap != null ? fmt(o.qty_scrap) : '--'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // NCRs
+    const ncrs = data.quality || [];
+    const ncrBody = document.querySelector('#ncrTable tbody');
+    if (ncrs.length === 0) {
+      ncrBody.innerHTML = emptyRow(5, 'No NCRs');
+    } else {
+      ncrBody.innerHTML = ncrs.map(n => {
+        const sevColor = n.severity === 'Critical' ? 'red' : n.severity === 'Major' ? 'yellow' : 'gray';
+        return `<tr>
+          <td>${n.ncr_id || '--'}</td>
+          <td>${n.defect_type || '--'}</td>
+          <td>${badge(n.severity, sevColor)}</td>
+          <td>${badge(n.status, statusColors[n.status] || 'gray')}</td>
+          <td>${n.reported_date || '--'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Tests
+    const tests = data.tests || [];
+    const testsBody = document.querySelector('#testsTable tbody');
+    if (tests.length === 0) {
+      testsBody.innerHTML = emptyRow(4, 'No test results');
+    } else {
+      testsBody.innerHTML = tests.map(t => {
+        const pfColor = t.pass_fail === 'PASS' ? 'green' : t.pass_fail === 'FAIL' ? 'red' : 'gray';
+        return `<tr>
+          <td>${t.test_type || '--'}</td>
+          <td>${badge(t.pass_fail, pfColor)}</td>
+          <td class="number">${t.test_value != null ? t.test_value : '--'}</td>
+          <td>${t.test_date || '--'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Holds
+    const holds = data.holds || [];
+    const holdsBody = document.querySelector('#holdsTable tbody');
+    if (holds.length === 0) {
+      holdsBody.innerHTML = emptyRow(5, 'No holds');
+    } else {
+      holdsBody.innerHTML = holds.map(h => {
+        const hc = h.hold_status === 'Active' ? 'red' : 'green';
+        return `<tr>
+          <td>${h.hold_reason || '--'}</td>
+          <td>${h.held_date || '--'}</td>
+          <td>${badge(h.hold_status, hc)}</td>
+          <td>${h.disposition || '--'}</td>
+          <td>${h.released_date || '--'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Lots
+    const lots = data.lots || [];
+    const lotsBody = document.querySelector('#lotsTable tbody');
+    if (lots.length === 0) {
+      lotsBody.innerHTML = emptyRow(5, 'No lot tracking records');
+    } else {
+      lotsBody.innerHTML = lots.map(l => `<tr>
+        <td>${l.output_lot || '--'}</td>
+        <td>${l.input_lot || '--'}</td>
+        <td class="number">${l.qty_consumed != null ? fmt(l.qty_consumed, 1) : '--'}</td>
+        <td>${l.tier_level || '--'}</td>
+        <td>${l.transaction_time || '--'}</td>
+      </tr>`).join('');
+    }
+
+    // Scrap
+    const scrap = data.scrap || [];
+    const scrapBody = document.querySelector('#scrapTable tbody');
+    if (scrap.length === 0) {
+      scrapBody.innerHTML = emptyRow(5, 'No scrap records');
+    } else {
+      scrapBody.innerHTML = scrap.map(s => `<tr>
+        <td>${s.cause_code || '--'}</td>
+        <td class="number">${s.quantity_ft != null ? fmt(s.quantity_ft, 1) : '--'}</td>
+        <td class="number">${s.cost != null ? '$' + fmt(s.cost, 2) : '--'}</td>
+        <td>${s.disposition || '--'}</td>
+        <td>${s.timestamp || '--'}</td>
+      </tr>`).join('');
+    }
+
+    // Audit
+    const audit = data.audit || [];
+    const auditBody = document.querySelector('#auditTable tbody');
+    if (audit.length === 0) {
+      auditBody.innerHTML = emptyRow(5, 'No audit entries');
+    } else {
+      auditBody.innerHTML = audit.map(a => `<tr>
+        <td>${a.field_changed || '--'}</td>
+        <td>${a.old_value || '--'}</td>
+        <td>${a.new_value || '--'}</td>
+        <td>${a.changed_datetime || '--'}</td>
+        <td>${a.change_reason || '--'}</td>
+      </tr>`).join('');
+    }
+
+    updateTimestamp();
+  } catch (err) {
+    showToast('Failed to load work order detail: ' + err.message, 'error');
+  }
+});
+</script>{% endblock %}

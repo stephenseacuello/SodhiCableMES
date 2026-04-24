@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% set active_page = "predictive" %}
+{% block title %}Predictive Maintenance — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Predictive Maintenance</h1>
+<p class="page-subtitle">Failure probability and recommended PM schedules</p>
+
+<div class="kpi-grid" id="riskCards"></div>
+
+<div class="chart-grid">
+  <div class="chart-card" style="grid-column:1/-1">
+    <h3>Exponential CDF — Failure Probability Over Time</h3>
+    <div class="chart-container"><canvas id="cdfChart"></canvas></div>
+  </div>
+</div>
+
+<h2>Recommended PM Schedule</h2>
+<table class="data-table" id="pmTable">
+  <thead><tr><th>Equipment</th><th>Failure Prob (%)</th><th>MTBF (hrs)</th><th>Last PM</th><th>Recommended Next PM</th><th>Priority</th></tr></thead>
+  <tbody></tbody>
+</table>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadPredictive() {
+  const res = await fetch('/api/predictive/risk');
+  const d = await res.json();
+  // API returns {equipment: [{equipment_id, description, status, next_due, frequency_days, mtbf_hrs, failure_probability}, ...]}
+  const equipment = d.equipment || [];
+  const rc = document.getElementById('riskCards');
+  rc.innerHTML = equipment.map(e => {
+    const fp = e.failure_probability ?? 0;
+    const col = fp > 0.7 ? 'red' : fp > 0.4 ? '#c59000' : 'green';
+    return `<div class="kpi-card"><h3>${e.description || e.equipment_id}</h3>
+      <p style="font-size:2rem;font-weight:700;color:${col}">${(fp*100).toFixed(1)}%</p>
+      <small>Failure probability</small>
+      <br><small>Status: ${e.status||'—'}</small></div>`;
+  }).join('');
+
+  // Build CDF curves from equipment MTBF data
+  const colors = ['#2563eb','#dc2626','#16a34a','#9333ea','#f59e0b','#0891b2','#be185d'];
+  const withMtbf = equipment.filter(e => e.mtbf_hrs && e.mtbf_hrs > 0);
+  if(withMtbf.length > 0) {
+    const maxHrs = Math.max(...withMtbf.map(e => e.mtbf_hrs * 3));
+    const timePoints = Array.from({length:50}, (_,i) => Math.round((i+1) * maxHrs / 50));
+    const datasets = withMtbf.map((e, i) => ({
+      label: e.description || e.equipment_id,
+      data: timePoints.map(t => +(1 - Math.exp(-t / e.mtbf_hrs)).toFixed(4)),
+      borderColor: colors[i % colors.length],
+      fill: false, tension: 0.4, pointRadius: 0,
+    }));
+    new Chart(document.getElementById('cdfChart'), {type:'line',
+      data:{labels:timePoints, datasets},
+      options:{responsive:true, maintainAspectRatio:false,
+        scales:{y:{title:{display:true,text:'F(t)'},min:0,max:1},
+                x:{title:{display:true,text:'Hours'}}}}});
+  }
+
+  // Build PM schedule table from equipment data
+  const tb = document.getElementById('pmTable').querySelector('tbody');
+  tb.innerHTML = equipment.map(e => {
+    const fp = e.failure_probability ?? 0;
+    const priority = fp > 0.7 ? 'High' : fp > 0.4 ? 'Medium' : 'Low';
+    const col = priority==='High'?'red':priority==='Medium'?'#c59000':'green';
+    return `<tr><td>${e.description || e.equipment_id}</td><td>${(fp*100).toFixed(1)}</td><td>${e.mtbf_hrs ?? '—'}</td>
+      <td>${e.next_due || '—'}</td><td>${e.next_due || '—'}</td>
+      <td><span class="badge" style="background:${col};color:#fff">${priority}</span></td></tr>`;
+  }).join('');
+}
+loadPredictive();
+
+document.addEventListener('DOMContentLoaded', () => { loadPredictive(); });
+</script>
+{% endblock %}

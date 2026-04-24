@@ -1,0 +1,34 @@
+[project]
+name = "sodhicable-mes"
+version = "4.0.0"
+description = "Best-in-class Manufacturing Execution System for wire & cable production"
+requires-python = ">=3.10"
+dependencies = [
+    "Flask>=3.0",
+]
+
+[project.optional-dependencies]
+ai = ["anthropic>=0.40.0"]
+dev = [
+    "pytest>=7.0",
+    "flake8>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.flake8]
+max-line-length = 120
+exclude = [
+    "database/",
+    "static/vendor/",
+    ".git",
+    "__pycache__",
+]
+ignore = ["E501", "W503"]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]

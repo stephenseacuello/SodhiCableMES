@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set active_page = "inventory" %}
+{% block title %}Inventory — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Inventory Management</h1>
+<p class="page-subtitle">Material availability and buffer status</p>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><h3>Total SKUs</h3><p id="kpiSkus">—</p></div>
+  <div class="kpi-card"><h3>Surplus Items</h3><p id="kpiSurplus" style="color:green">—</p></div>
+  <div class="kpi-card"><h3>Deficit Items</h3><p id="kpiDeficit" style="color:red">—</p></div>
+  <div class="kpi-card"><h3>Buffer Health</h3><p id="kpiBuffer">—</p></div>
+</div>
+
+<h2>Material Availability</h2>
+<table class="data-table" id="invTable">
+  <thead><tr><th>Material</th><th>On Hand</th><th>Required</th><th>Surplus/Deficit</th><th>Unit</th><th>Status</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2 style="margin-top:24px">Cable Length Calculator</h2>
+<div class="control-panel">
+  <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px">Calculate remaining cable length on a drum by weight (ADVARIS method)</p>
+  <div class="control-row">
+    <div class="control-group"><label>Current Drum Weight (lb)</label>
+      <input type="number" id="calcWeight" step="0.1" placeholder="150.0"></div>
+    <div class="control-group"><label>Tare Weight (lb)</label>
+      <input type="number" id="calcTare" step="0.1" placeholder="25.0"></div>
+    <div class="control-group"><label>Weight per KFT (lb/KFT)</label>
+      <input type="number" id="calcWPK" step="0.1" placeholder="85.0"></div>
+    <button class="btn btn-primary" onclick="calcLength()">Calculate</button>
+  </div>
+  <div id="calcResult" style="margin-top:12px;display:none" class="kpi-grid">
+    <div class="kpi-card blue"><div class="kpi-label">Net Cable Weight</div><div class="kpi-value" id="resWeight">—</div><span class="kpi-unit">lb</span></div>
+    <div class="kpi-card green"><div class="kpi-label">Remaining Length</div><div class="kpi-value" id="resFt">—</div><span class="kpi-unit">ft</span></div>
+    <div class="kpi-card blue"><div class="kpi-label">Remaining</div><div class="kpi-value" id="resKft">—</div><span class="kpi-unit">KFT</span></div>
+  </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px">
+  <h2>Buffer Status</h2>
+  <a href="/api/inventory/export" class="btn-export">Export Inventory CSV</a>
+</div>
+<div class="kpi-grid" id="bufferCards"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadInventory() {
+  const res = await fetch('/api/inventory/availability');
+  const d = await res.json();
+  document.getElementById('kpiSkus').textContent = d.total_skus ?? '—';
+  document.getElementById('kpiSurplus').textContent = d.surplus_count ?? '—';
+  document.getElementById('kpiDeficit').textContent = d.deficit_count ?? '—';
+  document.getElementById('kpiBuffer').textContent = d.buffer_health ?? '—';
+  const tb = document.getElementById('invTable').querySelector('tbody');
+  tb.innerHTML = (d.materials||[]).map(m => {
+    const diff = m.on_hand - m.required;
+    const color = diff >= 0 ? 'green' : 'red';
+    return `<tr><td>${m.name}</td><td>${m.on_hand}</td><td>${m.required}</td>
+      <td style="color:${color};font-weight:600">${diff>=0?'+':''}${diff}</td><td>${m.unit}</td>
+      <td><span class="badge" style="background:${color};color:#fff">${diff>=0?'Surplus':'Deficit'}</span></td></tr>`;
+  }).join('');
+  const bc = document.getElementById('bufferCards');
+  bc.innerHTML = (d.buffers||[]).map(b => {
+    const pct = Math.min(100, (b.current/b.target)*100);
+    const col = pct>=80?'green':pct>=50?'#c59000':'red';
+    return `<div class="kpi-card"><h3>${b.name}</h3>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${col}"></div></div>
+      <p>${b.current} / ${b.target}</p></div>`;
+  }).join('');
+}
+loadInventory();
+
+async function calcLength() {
+  const w = parseFloat(document.getElementById('calcWeight').value);
+  const t = parseFloat(document.getElementById('calcTare').value);
+  const wpk = parseFloat(document.getElementById('calcWPK').value);
+  if (!w || !t || !wpk) { showToast('Please fill in all fields', 'error'); return; }
+  try {
+    const res = await apiPost('/api/inventory/cable_length_calc', {
+      current_weight_lb: w, tare_weight_lb: t, weight_per_kft: wpk
+    });
+    document.getElementById('calcResult').style.display = 'grid';
+    document.getElementById('resWeight').textContent = res.net_cable_weight_lb;
+    document.getElementById('resFt').textContent = fmt(res.remaining_ft, 1);
+    document.getElementById('resKft').textContent = res.remaining_kft;
+  } catch(e) { showToast('Calculation failed', 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadInventory(); });
+</script>
+{% endblock %}

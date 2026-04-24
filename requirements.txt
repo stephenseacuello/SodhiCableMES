@@ -1,0 +1,21 @@
+# SodhiCable MES v4.0 — Dependencies
+# Only Flask required. All engines use Python stdlib only.
+# Install: pip install -r requirements.txt
+
+Flask>=3.0
+anthropic>=0.40.0  # Claude API for AI natural language queries (optional — app works without it)
+
+# Included with Flask (no separate install needed):
+# - Werkzeug (WSGI toolkit)
+# - Jinja2 (templating)
+# - MarkupSafe
+# - itsdangerous (session signing)
+# - click (CLI)
+# - blinker (signals)
+
+# NOT required (all built from scratch):
+# - numpy, scipy, pandas (no scientific computing deps)
+# - PuLP, CPLEX, Gurobi (embedded LP/IP solver in engines/solver.py)
+# - matplotlib, plotly (Chart.js used client-side instead)
+# - SQLAlchemy (raw sqlite3 used directly)
+# - celery, redis (threading used for simulation)

@@ -1,0 +1,242 @@
+{% extends "base.html" %}{% set active_page = "simulation" %}
+{% block title %}Factory Floor — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Factory Floor Simulation</h1>
+<p class="page-subtitle">SodhiCable factory floor — Operator-level Andon view — 24 work centers with real-time status</p>
+<div class="control-panel"><div class="control-row">
+ <button class="btn btn-success" onclick="startSim()">Start Simulation</button>
+ <button class="btn btn-danger" onclick="stopSim()">Stop</button>
+ <div class="control-group"><label>Speed</label><select id="simSpeed"><option value="50">20x Fast</option><option value="200">5x</option><option value="500" selected>2x</option><option value="1000">1x Normal</option><option value="2000">0.5x Slow</option><option value="3000">0.3x Demo</option></select></div>
+ <div class="control-group"><label>Jobs</label><input type="number" id="simJobs" value="50" min="5" max="200" style="width:70px"></div>
+ <div class="control-group"><label>Dispatch</label><select id="simDispatch"><option>FIFO</option><option>SPT</option><option>EDD</option><option>WSPT</option></select></div>
+</div></div>
+
+<!-- KPI Ticker -->
+<div class="kpi-grid" style="margin-bottom:16px">
+ <div class="kpi-card blue" id="sim-jobs"><div class="kpi-label">Jobs Completed</div><div class="kpi-value">0</div><span class="kpi-unit">jobs</span></div>
+ <div class="kpi-card blue" id="sim-flow"><div class="kpi-label">Avg Flow Time</div><div class="kpi-value">--</div><span class="kpi-unit">hrs</span></div>
+ <div class="kpi-card blue" id="sim-wip"><div class="kpi-label">Current WIP</div><div class="kpi-value">0</div><span class="kpi-unit">units</span></div>
+ <div class="kpi-card blue" id="sim-events"><div class="kpi-label">Events</div><div class="kpi-value">0</div><span class="kpi-unit">total</span></div>
+</div>
+
+<!-- SVG Factory Floor Map -->
+<div style="overflow-x:auto;margin-bottom:16px">
+<svg id="factoryFloorSvg" viewBox="0 0 1100 320" style="width:100%;max-width:1100px;margin:0 auto;display:block;background:var(--card-bg,#1a1f2e);border-radius:8px;border:1px solid var(--border-color,#2d3548)">
+  <defs>
+    <marker id="arrowHead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#4a5568"/></marker>
+    <filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <text x="550" y="20" text-anchor="middle" fill="#e2b96f" font-size="11" font-weight="600" letter-spacing="2">SODHICABLE PRODUCTION FLOW</text>
+  <!-- Pipeline stages rendered by JS -->
+  <g id="svgStages"></g>
+  <!-- Flow arrows rendered by JS -->
+  <g id="svgArrows"></g>
+  <!-- Legend -->
+  <g transform="translate(20,290)">
+    <circle cx="0" cy="0" r="5" fill="#22c55e"/><text x="10" y="4" fill="#94a3b8" font-size="9">Running</text>
+    <circle cx="80" cy="0" r="5" fill="#f59e0b"/><text x="90" y="4" fill="#94a3b8" font-size="9">Setup</text>
+    <circle cx="150" cy="0" r="5" fill="#ef4444"/><text x="160" y="4" fill="#94a3b8" font-size="9">Breakdown</text>
+    <circle cx="240" cy="0" r="5" fill="#64748b"/><text x="250" y="4" fill="#94a3b8" font-size="9">Idle</text>
+    <text x="320" y="4" fill="#64748b" font-size="9">Q = queue depth</text>
+  </g>
+</svg>
+</div>
+
+<div class="chart-grid">
+ <div class="chart-card"><h3>Event Log</h3><div id="eventLog" style="height:280px;overflow-y:auto;font-family:monospace;font-size:12px;color:var(--text-secondary);padding:12px;"></div></div>
+ <div class="chart-card"><h3>MESA Function Triggers</h3><div id="mesaLog" style="height:280px;overflow-y:auto;font-size:12px;color:var(--text-secondary);padding:12px;"></div></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+// Actual SodhiCable work centers grouped by production stage
+const WC_GROUPS = [
+  {stage: 'Compounding', wcs: ['COMPOUND-1']},
+  {stage: 'Drawing', wcs: ['DRAW-1']},
+  {stage: 'Extrusion', wcs: ['CV-1','CV-2','CV-3','PX-1']},
+  {stage: 'Shielding', wcs: ['FOIL-1','TAPE-1','BRAID-1','BRAID-2']},
+  {stage: 'Cabling', wcs: ['CABLE-1','CABLE-2','COMB-1']},
+  {stage: 'Jacketing', wcs: ['PLCV-1','LPML-1','CCCW-1']},
+  {stage: 'Armoring', wcs: ['ARMOR-1']},
+  {stage: 'Testing', wcs: ['TEST-1','TEST-2']},
+  {stage: 'Finishing', wcs: ['CUT-1','PACK-1']},
+];
+const WCS = WC_GROUPS.flatMap(g => g.wcs);
+const floor = document.getElementById('factoryFloor');
+const eventLog = document.getElementById('eventLog');
+const mesaLog = document.getElementById('mesaLog');
+let sseSource = null;
+let jobCount = 0, eventCount = 0, totalFlow = 0;
+
+// Build SVG factory floor with status lights and flow arrows
+const svgNS = 'http://www.w3.org/2000/svg';
+const stagesG = document.getElementById('svgStages');
+const arrowsG = document.getElementById('svgArrows');
+const STATUS_COLORS = {idle:'#64748b', running:'#22c55e', setup:'#f59e0b', breakdown:'#ef4444', busy:'#22c55e'};
+const stagePositions = [];
+let stageX = 30;
+WC_GROUPS.forEach((group, gi) => {
+  const stageW = Math.max(group.wcs.length * 55 + 20, 80);
+  const stageH = 220;
+  const y0 = 35;
+  // Stage background rect
+  const rect = document.createElementNS(svgNS, 'rect');
+  rect.setAttribute('x', stageX); rect.setAttribute('y', y0);
+  rect.setAttribute('width', stageW); rect.setAttribute('height', stageH);
+  rect.setAttribute('rx', '6'); rect.setAttribute('fill', '#1e2538'); rect.setAttribute('stroke', '#2d3548');
+  stagesG.appendChild(rect);
+  // Stage label
+  const label = document.createElementNS(svgNS, 'text');
+  label.setAttribute('x', stageX + stageW/2); label.setAttribute('y', y0 + 16);
+  label.setAttribute('text-anchor', 'middle'); label.setAttribute('fill', '#e2b96f');
+  label.setAttribute('font-size', '9'); label.setAttribute('font-weight', '600');
+  label.setAttribute('letter-spacing', '1'); label.textContent = group.stage.toUpperCase();
+  stagesG.appendChild(label);
+  // WC boxes inside stage
+  group.wcs.forEach((wc, wi) => {
+    const wx = stageX + 10 + wi * 55;
+    const wy = y0 + 28;
+    // WC rect
+    const wcRect = document.createElementNS(svgNS, 'rect');
+    wcRect.setAttribute('x', wx); wcRect.setAttribute('y', wy);
+    wcRect.setAttribute('width', '50'); wcRect.setAttribute('height', '170');
+    wcRect.setAttribute('rx', '4'); wcRect.setAttribute('fill', '#252d42'); wcRect.setAttribute('stroke', '#3d4760');
+    wcRect.id = `wc-bg-${wc}`;
+    stagesG.appendChild(wcRect);
+    // Status light circle
+    const circ = document.createElementNS(svgNS, 'circle');
+    circ.setAttribute('cx', wx + 25); circ.setAttribute('cy', wy + 20);
+    circ.setAttribute('r', '8'); circ.setAttribute('fill', '#64748b');
+    circ.id = `wc-light-${wc}`; circ.setAttribute('filter', 'url(#glow)');
+    stagesG.appendChild(circ);
+    // WC name
+    const nm = document.createElementNS(svgNS, 'text');
+    nm.setAttribute('x', wx + 25); nm.setAttribute('y', wy + 45);
+    nm.setAttribute('text-anchor', 'middle'); nm.setAttribute('fill', '#e2e8f0');
+    nm.setAttribute('font-size', '8'); nm.setAttribute('font-weight', '600');
+    nm.textContent = wc; stagesG.appendChild(nm);
+    // Status text
+    const st = document.createElementNS(svgNS, 'text');
+    st.setAttribute('x', wx + 25); st.setAttribute('y', wy + 60);
+    st.setAttribute('text-anchor', 'middle'); st.setAttribute('fill', '#94a3b8');
+    st.setAttribute('font-size', '7'); st.id = `wc-status-${wc}`;
+    st.textContent = 'IDLE'; stagesG.appendChild(st);
+    // Queue indicator
+    const qt = document.createElementNS(svgNS, 'text');
+    qt.setAttribute('x', wx + 25); qt.setAttribute('y', wy + 78);
+    qt.setAttribute('text-anchor', 'middle'); qt.setAttribute('fill', '#64748b');
+    qt.setAttribute('font-size', '8'); qt.id = `wc-queue-${wc}`;
+    qt.textContent = 'Q:0'; stagesG.appendChild(qt);
+  });
+  stagePositions.push({x: stageX, w: stageW, cx: stageX + stageW/2});
+  stageX += stageW + 12;
+});
+// Draw flow arrows between stages
+for (let i = 0; i < stagePositions.length - 1; i++) {
+  const from = stagePositions[i];
+  const to = stagePositions[i+1];
+  const line = document.createElementNS(svgNS, 'line');
+  line.setAttribute('x1', from.x + from.w + 1); line.setAttribute('y1', 145);
+  line.setAttribute('x2', to.x - 1); line.setAttribute('y2', 145);
+  line.setAttribute('stroke', '#4a5568'); line.setAttribute('stroke-width', '2');
+  line.setAttribute('marker-end', 'url(#arrowHead)');
+  arrowsG.appendChild(line);
+}
+// Also keep the old div floor element hidden but functional for backward compat
+floor.style.display = 'none';
+WC_GROUPS.forEach(group => {
+  group.wcs.forEach(wc => {
+    let div = document.createElement('div');
+    div.className = 'wc-box idle'; div.id = `wc-${wc}`;
+    div.innerHTML = `<div class="wc-name">${wc}</div><div class="wc-status">IDLE</div><div class="wc-queue">0</div>`;
+    floor.appendChild(div);
+  });
+});
+
+async function startSim() {
+  jobCount = 0; eventCount = 0; totalFlow = 0;
+  eventLog.innerHTML = ''; mesaLog.innerHTML = '';
+  const speed = document.getElementById('simSpeed').value;
+  const nJobs = document.getElementById('simJobs').value;
+  const dispatch = document.getElementById('simDispatch').value;
+  await apiPost('/api/simulation/config', {speed_ms: parseInt(speed), n_jobs: parseInt(nJobs), dispatch_rule: dispatch});
+  await apiPost('/api/simulation/start');
+  showToast('Simulation started — ' + nJobs + ' jobs, ' + dispatch, 'success');
+  // Connect SSE
+  if (sseSource) sseSource.close();
+  sseSource = new EventSource('/api/simulation/stream');
+  sseSource.onmessage = (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      handleSimEvent(evt);
+    } catch(err) {}
+  };
+  sseSource.onerror = () => { showToast('SSE connection lost', 'error'); };
+}
+
+async function stopSim() {
+  await apiPost('/api/simulation/stop');
+  if (sseSource) { sseSource.close(); sseSource = null; }
+  WCS.forEach(wc => { const el = document.getElementById('wc-'+wc); if(el){el.className='wc-box idle'; el.querySelector('.wc-status').textContent='IDLE'; el.querySelector('.wc-queue').textContent='0';} });
+  showToast('Simulation stopped', 'info');
+}
+
+function handleSimEvent(evt) {
+  const wc = evt.wc_id;
+  const el = document.getElementById('wc-'+wc);
+  if (el && evt.details) {
+    const status = evt.details.status || 'idle';
+    el.className = 'wc-box ' + status;
+    el.querySelector('.wc-status').textContent = status.toUpperCase();
+    if (evt.details.queue_length !== undefined) el.querySelector('.wc-queue').textContent = evt.details.queue_length;
+  }
+  // Update SVG factory floor
+  const light = document.getElementById('wc-light-'+wc);
+  const svgStatus = document.getElementById('wc-status-'+wc);
+  const svgQueue = document.getElementById('wc-queue-'+wc);
+  if (light && evt.details) {
+    const status = evt.details.status || 'idle';
+    light.setAttribute('fill', STATUS_COLORS[status] || '#64748b');
+    if (svgStatus) svgStatus.textContent = status.toUpperCase();
+    if (svgQueue && evt.details.queue_length !== undefined) svgQueue.textContent = 'Q:'+evt.details.queue_length;
+  }
+
+  eventCount++;
+
+  // Track completion KPIs
+  if (evt.event_type === 'completion' && evt.details?.service_time) {
+    // Count WIP (approximate from queue lengths)
+    let wip = 0;
+    WCS.forEach(w => { const e = document.getElementById('wc-'+w); if(e) wip += parseInt(e.querySelector('.wc-queue').textContent)||0; });
+    document.querySelector('#sim-wip .kpi-value').textContent = wip;
+  }
+  if (evt.event_type === 'sim_end') {
+    const d = evt.details || {};
+    document.querySelector('#sim-jobs .kpi-value').textContent = d.jobs_completed || 0;
+    document.querySelector('#sim-flow .kpi-value').textContent = d.avg_flow_time || '--';
+    document.querySelector('#sim-jobs').className = 'kpi-card green';
+    document.querySelector('#sim-flow').className = 'kpi-card green';
+  }
+  document.querySelector('#sim-events .kpi-value').textContent = eventCount;
+
+  // Log event
+  const time = evt.sim_time ? `[T=${evt.sim_time}h]` : '';
+  const desc = evt.details?.description || evt.details?.message || `${evt.event_type} ${evt.job_id||''} @ ${wc}`;
+  const color = evt.event_type === 'failure' ? '#ef4444' : evt.event_type === 'repair' ? '#22c55e' : evt.event_type === 'sim_end' ? '#f59e0b' : '#94a3b8';
+  eventLog.innerHTML = `<div style="color:${color}">${time} ${desc}</div>` + eventLog.innerHTML;
+
+  // MESA function trigger logging
+  if (evt.event_type === 'failure' && evt.details?.mesa_chain) {
+    const chain = evt.details.mesa_chain;
+    const chainStr = chain.map(f => `<span class="badge badge-red">${f}</span>`).join(' → ');
+    mesaLog.innerHTML = `<div style="margin-bottom:8px"><strong style="color:#ef4444">${time} FAILURE:</strong> ${evt.details.description}<br>Chain: ${chainStr}</div>` + mesaLog.innerHTML;
+    showToast(evt.details.description, 'error', 6000);
+  } else if (evt.event_type === 'repair') {
+    mesaLog.innerHTML = `<div style="margin-bottom:8px"><strong style="color:#22c55e">${time} REPAIR:</strong> ${evt.details?.description || wc + ' back online'}<br>Chain: <span class="badge badge-green">F9</span> → <span class="badge badge-blue">F1</span> → <span class="badge badge-blue">F11</span></div>` + mesaLog.innerHTML;
+  } else if (evt.event_type === 'sim_end') {
+    mesaLog.innerHTML = `<div style="margin-bottom:8px"><strong style="color:#f59e0b">${time} SHIFT END:</strong> ${d?.jobs_completed || ''} jobs completed. <span class="badge badge-yellow">F11</span> OEE report generated.</div>` + mesaLog.innerHTML;
+  }
+  updateTimestamp();
+}
+
+document.addEventListener('DOMContentLoaded', () => {});
+</script>{% endblock %}

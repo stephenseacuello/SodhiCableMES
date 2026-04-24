@@ -1,0 +1,12 @@
+[flake8]
+max-line-length = 120
+exclude =
+    database/,
+    static/vendor/,
+    .git,
+    __pycache__,
+    paper/
+ignore = E501,W503,E302,E303,W291,W293,E261,E262,W292,E128,E127,E126,E131
+per-file-ignores =
+    init_db.py:E501
+    database/*:E501

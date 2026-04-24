@@ -1,0 +1,157 @@
+{% extends "base.html" %}{% set active_page = "dispatch" %}
+{% block title %}F3 — Production Dispatching — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F3 — Production Dispatching</h1>
+<p class="page-subtitle">Priority-scored job queue, operator certification validation, dispatch workflow</p>
+
+<div class="control-panel"><div class="control-row">
+ <div class="control-group"><label>Work Center</label>
+  <select id="wcSelect" onchange="loadQueue()" style="min-width:220px"><option value="">All Work Centers</option></select>
+ </div>
+ <button class="btn btn-primary" onclick="loadQueue()">Rank Queue</button>
+ <button class="btn btn-primary" onclick="dispatchNext()" style="background:#22c55e;border-color:#22c55e">Dispatch Next</button>
+</div></div>
+
+<div class="kpi-grid" id="dispatchKPIs">
+ <div class="kpi-card blue"><div class="kpi-label">Jobs in Queue</div><div class="kpi-value" id="kpiJobs">--</div></div>
+ <div class="kpi-card red"><div class="kpi-label">Critical Priority</div><div class="kpi-value" id="kpiCritical">--</div></div>
+ <div class="kpi-card yellow"><div class="kpi-label">Next Due Date</div><div class="kpi-value" id="kpiNextDue">--</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Families in Queue</div><div class="kpi-value" id="kpiFamilies">--</div></div>
+ <div class="kpi-card green"><div class="kpi-label">Avg Priority Score</div><div class="kpi-value" id="kpiAvgScore">--</div></div>
+</div>
+
+<div class="chart-card"><h3>Dispatch Queue — Ranked by Priority Score (highest first)</h3>
+ <div style="max-height:600px;overflow-y:auto">
+  <table class="data-table" id="dispatchTable">
+   <thead><tr><th>#</th><th>Score</th><th>Priority Bar</th><th>WO ID</th><th>WC</th><th>Product</th><th>Family</th><th>Qty (KFT)</th><th>Priority</th><th>Due Date</th><th>Days Left</th><th>Status</th><th>BU</th></tr></thead>
+   <tbody><tr><td colspan="13" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+
+<div id="scoreDetail" style="display:none" class="chart-card">
+  <h3>Priority Score Breakdown — <span id="sdWO"></span></h3>
+  <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi-card"><div class="kpi-label">Urgency (40%)</div><div id="sdUrg" class="kpi-value">--</div></div>
+    <div class="kpi-card"><div class="kpi-label">Priority (40%)</div><div id="sdPri" class="kpi-value">--</div></div>
+    <div class="kpi-card"><div class="kpi-label">Changeover (20%)</div><div id="sdCo" class="kpi-value">--</div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+const familyColors = {A:'#3b82f6',B:'#ef4444',C:'#f59e0b',D:'#6366f1',I:'#14b8a6',M:'#f97316',R:'#8b5cf6',S:'#ec4899',U:'#22c55e'};
+let queueData = [];
+
+async function loadQueue() {
+  const wc = document.getElementById('wcSelect').value;
+  const d = await apiFetch('/api/dispatch/queue' + (wc ? '?wc_id=' + wc : ''));
+  const queue = d.queue || d || [];
+  const total = d.total || queue.length;
+  queueData = queue;
+
+  // Populate WC dropdown (once)
+  const sel = document.getElementById('wcSelect');
+  if (sel.options.length <= 1 && d.work_centers) {
+    d.work_centers.forEach(w => {
+      const o = document.createElement('option');
+      o.value = w; o.textContent = w;
+      sel.appendChild(o);
+    });
+  }
+
+  // KPI cards
+  document.getElementById('kpiJobs').textContent = total;
+  const critical = queue.filter(r => (r.priority || 5) <= 2).length;
+  document.getElementById('kpiCritical').textContent = critical;
+
+  const dueDates = queue.map(r => r.due_date).filter(Boolean).sort();
+  document.getElementById('kpiNextDue').textContent = dueDates.length ? dueDates[0] : '--';
+
+  const families = new Set(queue.map(r => r.family).filter(Boolean));
+  document.getElementById('kpiFamilies').textContent = families.size;
+
+  const avgScore = queue.length ? (queue.reduce((s, r) => s + (r.dispatch_score || 0), 0) / queue.length).toFixed(3) : '--';
+  document.getElementById('kpiAvgScore').textContent = avgScore;
+
+  // Table
+  const tbody = document.querySelector('#dispatchTable tbody');
+  if (!queue.length) {
+    tbody.innerHTML = '<tr><td colspan="13" style="color:var(--text-muted)">No jobs in queue for this work center</td></tr>';
+    document.getElementById('scoreDetail').style.display = 'none';
+    return;
+  }
+
+  const maxScore = Math.max(...queue.map(r => r.dispatch_score || 0), 0.001);
+
+  tbody.innerHTML = queue.map((r, i) => {
+    const score = r.dispatch_score || 0;
+    const scoreColor = score > 0.5 ? '#ef4444' : score > 0.3 ? '#f59e0b' : '#22c55e';
+    const pri = r.priority || 5;
+    const priBadge = pri <= 2 ? 'red' : pri <= 3 ? 'yellow' : 'green';
+    const daysLeft = r.days_until_due;
+    const dayColor = daysLeft <= 0 ? '#ef4444' : daysLeft <= 3 ? '#f59e0b' : '#22c55e';
+    const fc = familyColors[r.family] || '#64748b';
+
+    // Priority bar
+    const barWidth = Math.min((score / maxScore) * 100, 100);
+    const barColor = score / maxScore > 0.7 ? '#ef4444' : score / maxScore > 0.4 ? '#f59e0b' : '#22c55e';
+
+    return `<tr style="cursor:pointer" onclick="showScoreBreakdown(${i})">
+      <td>${i + 1}</td>
+      <td style="font-weight:700;color:${scoreColor}">${score.toFixed(3)}</td>
+      <td><div style="width:80px;height:10px;background:var(--bg-elevated);border-radius:4px;overflow:hidden"><div style="width:${barWidth}%;height:100%;background:${barColor};border-radius:4px"></div></div></td>
+      <td><strong>${r.wo_id}</strong></td>
+      <td>${r.wc_id || '-'}</td>
+      <td>${r.product_id}</td>
+      <td><span style="color:${fc};font-weight:700">${r.family || '-'}</span></td>
+      <td class="number">${r.order_qty_kft} KFT</td>
+      <td><span class="badge badge-${priBadge}">${pri}</span></td>
+      <td>${r.due_date || '-'}</td>
+      <td><span style="color:${dayColor};font-weight:700">${daysLeft != null ? daysLeft + 'd' : '?'}</span></td>
+      <td><span class="badge badge-${r.status === 'InProcess' ? 'yellow' : 'blue'}">${r.status}</span></td>
+      <td>${r.business_unit || '-'}</td>
+    </tr>`;
+  }).join('');
+
+  updateTimestamp();
+}
+
+function showScoreBreakdown(idx) {
+  const r = queueData[idx];
+  if (!r) return;
+
+  // Compute breakdown components (mirroring backend formula)
+  const daysLeft = r.days_until_due || 14;
+  const urgency = 1.0 / daysLeft;
+  const urgencyComponent = (0.4 * urgency * 10).toFixed(4);
+
+  // Priority component (BU weight normalized)
+  const buWeights = {Defense:3, Control:2, OilGas:2, Industrial:1};
+  const buW = buWeights[r.business_unit] || 1;
+  const priorityComponent = (0.4 * (buW / 3.0)).toFixed(4);
+
+  // Changeover component (using proc_time from score)
+  const totalScore = r.dispatch_score || 0;
+  const changeoverComponent = (totalScore - parseFloat(urgencyComponent) - parseFloat(priorityComponent)).toFixed(4);
+
+  document.getElementById('sdWO').textContent = r.wo_id;
+  document.getElementById('sdUrg').textContent = urgencyComponent;
+  document.getElementById('sdPri').textContent = priorityComponent;
+  document.getElementById('sdCo').textContent = changeoverComponent;
+  document.getElementById('scoreDetail').style.display = 'block';
+  document.getElementById('scoreDetail').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+async function dispatchNext() {
+  try {
+    const wc = document.getElementById('wcSelect').value;
+    const result = await apiPost('/api/dispatch/dispatch_next', {wc_id: wc});
+    showToast('Job dispatched successfully: ' + (result.wo_id || 'next in queue'), 'success');
+    loadQueue();
+  } catch (err) {
+    showToast('Dispatch endpoint not available yet — ' + (err.message || 'server error'), 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadQueue);
+</script>{% endblock %}

@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+{% set active_page = "executive" %}
+{% block title %}Executive Dashboard — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Executive Dashboard</h1>
+<p class="page-subtitle">Strategic overview — SodhiCable plant performance</p>
+
+<!-- Filter Bar -->
+<div class="control-panel" style="margin-bottom:12px">
+ <div class="control-row">
+  <div class="control-group"><label>From</label>
+    <input type="date" id="execDateFrom" onchange="reloadExec()"></div>
+  <div class="control-group"><label>To</label>
+    <input type="date" id="execDateTo" onchange="reloadExec()"></div>
+  <div class="control-group"><label>Work Center</label>
+    <select id="execWC" onchange="reloadExec()"><option value="">All Work Centers</option></select></div>
+  <div class="control-group"><label>Shift</label>
+    <select id="execShift" onchange="reloadExec()"><option value="">All Shifts</option>
+      <option value="Day">Day</option><option value="Swing">Swing</option><option value="Night">Night</option>
+    </select></div>
+  <div class="control-group"><label>Product Family</label>
+    <select id="execFamily" onchange="onExecFamilyChange()"><option value="">All Families</option>
+      <option value="A">Instrumentation</option><option value="B">Armored Control</option>
+      <option value="C">DHT (Down Hole)</option><option value="D">Down Hole Special</option>
+      <option value="I">Insulated Conductors</option><option value="M">Medium Voltage</option>
+      <option value="R">Utility/Building</option><option value="S">Shipboard/Fiber</option>
+      <option value="U">Fire-Rated (UL)</option>
+    </select></div>
+  <div class="control-group"><label>Product / Part #</label>
+    <select id="execProduct" onchange="reloadExec()" style="width:160px"><option value="">All Products</option></select></div>
+  <button class="btn" onclick="clearExecFilters()" style="margin-top:18px">Clear</button>
+  <span id="execFilterStatus" style="margin-top:20px;font-size:11px;color:var(--accent-gold)"></span>
+ </div>
+</div>
+
+<!-- ── KPI Cards ─────────────────────────────────────────────────── -->
+<div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+  <div class="kpi-card" id="cardOee">
+    <div class="kpi-label">Plant OEE</div>
+    <div class="kpi-value" id="kpiOee">--<span class="kpi-unit">%</span></div>
+    <div class="kpi-target" id="kpiOeeTrend">target 85%</div>
+  </div>
+  <div class="kpi-card" id="cardOtd">
+    <div class="kpi-label">On-Time Delivery</div>
+    <div class="kpi-value" id="kpiOtd">--<span class="kpi-unit">%</span></div>
+    <div class="kpi-target" id="kpiOtdSub">target 90%</div>
+  </div>
+  <div class="kpi-card" id="cardCost">
+    <div class="kpi-label">Cost / KFT</div>
+    <div class="kpi-value" id="kpiCost">--</div>
+    <div class="kpi-target">weighted avg across families</div>
+  </div>
+  <div class="kpi-card" id="cardScrap">
+    <div class="kpi-label">Scrap $</div>
+    <div class="kpi-value" id="kpiScrap">--</div>
+    <div class="kpi-target" id="kpiScrapFt">--</div>
+  </div>
+</div>
+
+<!-- ── Charts Row 1: OEE Trend + Cost Waterfall ──────────────────── -->
+<div class="chart-grid" style="grid-template-columns: 1fr 1fr;">
+  <div class="chart-card">
+    <h3>OEE Trend (14 Days)</h3>
+    <div class="chart-container"><canvas id="oeeTrendChart"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h3>Cost per KFT by Product Family</h3>
+    <div class="chart-container"><canvas id="costWaterfallChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ── Row 2: Revenue/Margin + On-Time by BU ─────────────────────── -->
+<div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:16px;">
+  <div class="kpi-card" id="cardRevenue">
+    <div class="kpi-label">Avg Revenue / KFT</div>
+    <div class="kpi-value" id="kpiRevenue">--</div>
+    <div class="kpi-target">per 1,000 ft</div>
+  </div>
+  <div class="kpi-card" id="cardMargin">
+    <div class="kpi-label">Gross Margin</div>
+    <div class="kpi-value" id="kpiMargin">--<span class="kpi-unit">%</span></div>
+    <div class="kpi-target" id="kpiMarginSub">--</div>
+  </div>
+  <div class="kpi-card" id="cardEnergy">
+    <div class="kpi-label">Energy Cost</div>
+    <div class="kpi-value" id="kpiEnergy">--</div>
+    <div class="kpi-target" id="kpiEnergyKwh">--</div>
+  </div>
+</div>
+
+<div class="chart-grid" style="grid-template-columns: 1fr 1fr;">
+  <div class="chart-card">
+    <h3>On-Time Delivery by Business Unit</h3>
+    <div class="chart-container"><canvas id="buOtdChart"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h3>On-Time vs Late Work Orders</h3>
+    <div class="chart-container" style="display:flex; align-items:center; justify-content:center;">
+      <canvas id="otdDonutChart" style="max-width:260px; max-height:260px;"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 3: Period Comparison + Material Risk + Top Issues ──────── -->
+<div class="chart-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+  <div class="chart-card">
+    <h3>Period-over-Period</h3>
+    <div id="periodComparison" style="padding:8px;">
+      <p style="color:var(--text-muted);font-size:12px">Set a date range to see comparison</p>
+    </div>
+  </div>
+  <div class="chart-card">
+    <h3>Material Risk (Low Stock)</h3>
+    <div id="materialRiskList" style="overflow-y:auto; max-height:260px;">
+      <p style="color:var(--text-muted); font-size:13px;">Loading...</p>
+    </div>
+  </div>
+  <div class="chart-card">
+    <h3>Top Issues Requiring Attention</h3>
+    <div id="issuesList" style="overflow-y:auto; max-height:260px;">
+      <p style="color:var(--text-muted); font-size:13px;">Loading...</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _execAllProducts = [];
+let execOeeTrendChart, execCostChart, execOtdChart, execBuChart;
+
+function execFilterParams() {
+  const ids = ['execDateFrom','execDateTo','execWC','execShift','execFamily','execProduct'];
+  const keys = ['date_from','date_to','wc_id','shift','family','product_id'];
+  const parts = [];
+  ids.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el && el.value) parts.push(keys[i] + '=' + encodeURIComponent(el.value));
+  });
+  const label = document.getElementById('execFilterStatus');
+  if (label) label.textContent = parts.length ? 'Filtered (' + parts.length + ')' : '';
+  return parts.length ? '?' + parts.join('&') : '';
+}
+function clearExecFilters() {
+  ['execDateFrom','execDateTo','execWC','execShift','execFamily','execProduct'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('execFilterStatus').textContent = '';
+  updateExecProductOptions();
+  reloadExec();
+}
+function onExecFamilyChange() {
+  updateExecProductOptions();
+  reloadExec();
+}
+function updateExecProductOptions() {
+  const famSel = document.getElementById('execFamily');
+  const prodSel = document.getElementById('execProduct');
+  if (!prodSel) return;
+  const fam = famSel ? famSel.value : '';
+  prodSel.innerHTML = '<option value="">All Products</option>';
+  _execAllProducts.forEach(p => {
+    if (!fam || p.family === fam) {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.id + ' — ' + p.name;
+      prodSel.appendChild(o);
+    }
+  });
+}
+async function reloadExec() { await loadExecDashboard(); }
+async function populateExecWC() {
+  try {
+    const data = await apiFetch('/api/dashboard/oee_by_wc');
+    const sel = document.getElementById('execWC');
+    if (!sel || sel.options.length > 1) return;
+    const wcs = [...new Set(data.map(d => d.wc_id))].sort();
+    wcs.forEach(wc => { const o = document.createElement('option'); o.value = wc; o.textContent = wc; sel.appendChild(o); });
+  } catch(e) {}
+}
+async function populateExecProduct() {
+  try {
+    const data = await apiFetch('/api/mrp/products');
+    const products = data.products || data || [];
+    _execAllProducts = products.map(p => ({id: p.id || p.product_id, name: p.name || '', family: p.family || ''}));
+    updateExecProductOptions();
+  } catch(e) {}
+}
+
+async function loadExecDashboard() {
+  let d;
+  try {
+    d = await apiFetch('/api/executive/summary' + execFilterParams());
+  } catch (e) {
+    return;
+  }
+
+  /* ── KPI Cards ────────────────────────────────────────────────── */
+  function setExecKPI(cardId, valueId, val, unit, thresholds, subId, subText) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.className = 'kpi-card ' + (val >= thresholds.g ? 'green' : val >= thresholds.y ? 'yellow' : 'red');
+    document.getElementById(valueId).innerHTML = (typeof val === 'number' ? val.toFixed(1) : val) + '<span class="kpi-unit">' + unit + '</span>';
+    if (subId && subText) document.getElementById(subId).innerHTML = subText;
+  }
+
+  // OEE
+  const oeeVal = d.plant_oee || 0;
+  const diff = oeeVal - (d.prev_oee || 0);
+  const arrow = diff >= 0 ? '&#9650;' : '&#9660;';
+  const arrowColor = diff >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+  setExecKPI('cardOee', 'kpiOee', oeeVal, '%', {y:65, g:85}, 'kpiOeeTrend',
+    `<span style="color:${arrowColor};font-size:13px">${arrow} ${Math.abs(diff).toFixed(1)}pp</span> &nbsp; target 85%`);
+
+  // On-Time Delivery
+  const otdVal = d.on_time_pct || 0;
+  setExecKPI('cardOtd', 'kpiOtd', otdVal, '%', {y:75, g:90}, 'kpiOtdSub',
+    `${d.on_time_count||0} on-time / ${d.total_complete_wos||0} complete — target 90%`);
+
+  // Cost / KFT
+  document.getElementById('kpiCost').innerHTML = '$' + fmt(d.cost_per_kft || 0, 2);
+  document.getElementById('cardCost').className = 'kpi-card blue';
+
+  // Scrap $
+  const scrapCost = d.total_scrap_cost || 0;
+  document.getElementById('kpiScrap').innerHTML = '$' + fmt(scrapCost, 0);
+  document.getElementById('kpiScrapFt').textContent = fmt(d.total_scrap_ft || 0, 0) + ' ft scrapped';
+  document.getElementById('cardScrap').className = 'kpi-card ' + (scrapCost > 5000 ? 'red' : scrapCost > 2000 ? 'yellow' : 'green');
+
+  /* ── OEE Trend Sparkline ──────────────────────────────────────── */
+  const trend = d.oee_trend || [];
+  if (execOeeTrendChart) execOeeTrendChart.destroy();
+  const trendCanvas = document.getElementById('oeeTrendChart');
+  if (trend.length && trendCanvas) {
+    execOeeTrendChart = new Chart(trendCanvas, {
+      type: 'line',
+      data: {
+        labels: trend.map(t => t.shift_date),
+        datasets: [{
+          label: 'OEE %',
+          data: trend.map(t => t.avg_oee),
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.08)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: '#3b82f6',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { min: 0, max: 100, ticks: { callback: v => v + '%' } },
+          x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+        },
+        plugins: {
+          legend: { display: false },
+          annotation: {
+            annotations: {
+              target: {
+                type: 'line', yMin: 85, yMax: 85,
+                borderColor: 'rgba(34,197,94,0.5)', borderDash: [6, 3], borderWidth: 1,
+                label: { display: true, content: 'Target 85%', position: 'end',
+                         font: { size: 10 }, color: '#4ade80',
+                         backgroundColor: 'transparent' }
+              }
+            }
+          }
+        }
+      }
+    });
+  } else if (trendCanvas) {
+    // Empty state
+    execOeeTrendChart = new Chart(trendCanvas, {
+      type: 'line', data: { labels: ['No data'], datasets: [{ data: [0], borderColor: '#334155' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { y: { min: 0, max: 100 } } }
+    });
+  }
+
+  /* ── Cost Waterfall by Family ─────────────────────────────────── */
+  const FAMILY_NAMES = {
+    'A': 'Instrumentation', 'B': 'Armored Control', 'C': 'DHT (Down Hole)',
+    'D': 'Down Hole Special', 'I': 'Insulated Conductors', 'M': 'Medium Voltage',
+    'R': 'Utility/Building', 'S': 'Shipboard/Fiber', 'U': 'Fire-Rated (UL)'
+  };
+  const families = d.cost_by_family || [];
+  if (execCostChart) execCostChart.destroy();
+  if (families.length) {
+    execCostChart = new Chart(document.getElementById('costWaterfallChart'), {
+      type: 'bar',
+      data: {
+        labels: families.map(f => FAMILY_NAMES[f.family] || f.family),
+        datasets: [
+          {
+            label: 'Material',
+            data: families.map(f => f.waterfall ? f.waterfall.material : +(f.avg_cost * 0.55).toFixed(2)),
+            backgroundColor: '#3b82f6'
+          },
+          {
+            label: 'Labor',
+            data: families.map(f => f.waterfall ? f.waterfall.labor : +(f.avg_cost * 0.20).toFixed(2)),
+            backgroundColor: '#8b5cf6'
+          },
+          {
+            label: 'Overhead',
+            data: families.map(f => f.waterfall ? f.waterfall.overhead : +(f.avg_cost * 0.15).toFixed(2)),
+            backgroundColor: '#64748b'
+          },
+          {
+            label: 'Scrap',
+            data: families.map(f => f.waterfall ? f.waterfall.scrap : +(f.avg_cost * 0.03).toFixed(2)),
+            backgroundColor: '#ef4444'
+          },
+          {
+            label: 'Energy',
+            data: families.map(f => f.waterfall ? f.waterfall.energy : +(f.avg_cost * 0.05).toFixed(2)),
+            backgroundColor: '#f59e0b'
+          },
+          {
+            label: 'Margin',
+            data: families.map(f => Math.max(f.avg_margin || 0, 0)),
+            backgroundColor: '#22c55e'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { stacked: true, ticks: { font: { size: 10 } } },
+          y: { stacked: true, ticks: { callback: v => '$' + v } }
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': $' + ctx.parsed.y.toFixed(2) + '/KFT' } }
+        }
+      }
+    });
+  }
+
+  /* ── On-Time vs Late Donut ────────────────────────────────────── */
+  const onTime = d.on_time_count || 0;
+  const late = d.late_count || 0;
+  if (execOtdChart) execOtdChart.destroy();
+  const otdCanvas = document.getElementById('otdDonutChart');
+  if (otdCanvas && onTime + late > 0) {
+    otdCanvas.style.display = '';
+    execOtdChart = new Chart(otdCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['On-Time (' + onTime + ')', 'Late (' + late + ')'],
+        datasets: [{
+          data: [onTime, late],
+          backgroundColor: ['#22c55e', '#ef4444'],
+          borderWidth: 0,
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 16, font: { size: 12 } } },
+          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + ' WOs' } }
+        }
+      }
+    });
+  } else if (otdCanvas) {
+    // No data — show empty chart with message (don't destroy the canvas)
+    execOtdChart = new Chart(otdCanvas, {
+      type: 'doughnut',
+      data: { labels: ['No data'], datasets: [{ data: [1], backgroundColor: ['#334155'], borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: true, cutout: '65%',
+        plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+    });
+  }
+
+  /* ── Revenue & Margin KPIs ─────────────────────────────────────── */
+  document.getElementById('kpiRevenue').innerHTML = '$' + fmt(d.avg_revenue_per_kft || 0, 2);
+  document.getElementById('cardRevenue').className = 'kpi-card blue';
+  const mPct = d.margin_pct || 0;
+  document.getElementById('kpiMargin').innerHTML = mPct.toFixed(1) + '<span class="kpi-unit">%</span>';
+  document.getElementById('kpiMarginSub').textContent = '$' + fmt(d.avg_margin_per_kft || 0, 2) + '/KFT margin';
+  document.getElementById('cardMargin').className = 'kpi-card ' + (mPct >= 40 ? 'green' : mPct >= 20 ? 'yellow' : 'red');
+  document.getElementById('kpiEnergy').innerHTML = '$' + fmt(d.total_energy_cost || 0, 0);
+  document.getElementById('kpiEnergyKwh').textContent = fmt(d.total_energy_kwh || 0, 0) + ' kWh @ $' + (d.energy_cost_per_kwh || 0.12) + '/kWh';
+  document.getElementById('cardEnergy').className = 'kpi-card blue';
+
+  /* ── On-Time by Business Unit ────────────────────────────────── */
+  if (execBuChart) execBuChart.destroy();
+  const buData = d.by_business_unit || [];
+  const buCanvas = document.getElementById('buOtdChart');
+  if (buCanvas && buData.length) {
+    execBuChart = new Chart(buCanvas, {
+      type: 'bar',
+      data: {
+        labels: buData.map(b => b.business_unit),
+        datasets: [
+          { label: 'On-Time', data: buData.map(b => b.on_time), backgroundColor: '#22c55e' },
+          { label: 'Late', data: buData.map(b => b.late), backgroundColor: '#ef4444' }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false,
+        scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'Work Orders' } } },
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+      }
+    });
+  } else if (buCanvas) {
+    execBuChart = new Chart(buCanvas, {
+      type: 'bar', data: { labels: ['No data'], datasets: [{ data: [0], backgroundColor: '#334155' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    });
+  }
+
+  /* ── Period-over-Period ───────────────────────────────────────── */
+  const pop = d.period_comparison;
+  const popDiv = document.getElementById('periodComparison');
+  if (pop && popDiv) {
+    const oeeArrow = pop.oee_delta >= 0 ? '&#9650;' : '&#9660;';
+    const oeeColor = pop.oee_delta >= 0 ? '#22c55e' : '#ef4444';
+    const scrapArrow = pop.scrap_delta_ft <= 0 ? '&#9650;' : '&#9660;';
+    const scrapColor = pop.scrap_delta_ft <= 0 ? '#22c55e' : '#ef4444';
+    popDiv.innerHTML = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${pop.prev_period} vs ${pop.curr_period}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:var(--bg-primary);border-radius:6px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--text-muted)">OEE</div>
+          <div style="font-size:18px;font-weight:700">${pop.curr_oee}%</div>
+          <div style="color:${oeeColor};font-size:12px">${oeeArrow} ${Math.abs(pop.oee_delta).toFixed(1)}pp</div>
+          <div style="font-size:10px;color:var(--text-muted)">was ${pop.prev_oee}%</div>
+        </div>
+        <div style="background:var(--bg-primary);border-radius:6px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:var(--text-muted)">Scrap</div>
+          <div style="font-size:18px;font-weight:700">${fmt(pop.curr_scrap_ft,0)} ft</div>
+          <div style="color:${scrapColor};font-size:12px">${scrapArrow} ${fmt(Math.abs(pop.scrap_delta_ft),0)} ft</div>
+          <div style="font-size:10px;color:var(--text-muted)">was ${fmt(pop.prev_scrap_ft,0)} ft</div>
+        </div>
+      </div>`;
+  } else if (popDiv) {
+    popDiv.innerHTML = '<p style="color:var(--text-muted);font-size:12px;padding:12px">Set a date range to see period-over-period comparison</p>';
+  }
+
+  /* ── Material Risk ───────────────────────────────────────────── */
+  const matDiv = document.getElementById('materialRiskList');
+  const matRisks = d.material_risks || [];
+  if (matDiv) {
+    if (!matRisks.length) {
+      matDiv.innerHTML = '<p style="color:var(--accent-green);font-size:12px;padding:12px">All materials above safety stock</p>';
+    } else {
+      let html = '<table class="data-table" style="font-size:11px"><thead><tr><th>Material</th><th>Available</th><th>Lead Time</th><th>Status</th></tr></thead><tbody>';
+      matRisks.forEach(m => {
+        const badge = m.status === 'STOCKOUT' ? 'badge-red' : 'badge-yellow';
+        html += `<tr><td>${m.name}</td><td class="number">${fmt(m.available,0)}</td><td>${m.lead_time_days}d</td><td><span class="badge ${badge}">${m.status}</span></td></tr>`;
+      });
+      html += '</tbody></table>';
+      matDiv.innerHTML = html;
+    }
+  }
+
+  /* ── Top 5 Issues ─────────────────────────────────────────────── */
+  const issues = d.top_issues || [];
+  const issueDiv = document.getElementById('issuesList');
+  if (issues.length === 0) {
+    issueDiv.innerHTML = '<p style="color:var(--accent-green); font-size:14px; padding:12px;">No critical issues detected.</p>';
+  } else {
+    let html = '<table class="data-table" style="font-size:12px;"><thead><tr><th>Type</th><th>Detail</th><th></th></tr></thead><tbody>';
+    issues.forEach(iss => {
+      const badgeCls = iss.severity === 'red' ? 'badge-red' : 'badge-yellow';
+      html += `<tr>
+        <td><span class="badge ${badgeCls}">${iss.type}</span></td>
+        <td>${iss.detail}</td>
+        <td style="text-align:center;">${iss.severity === 'red' ? '&#9679;' : '&#9675;'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    issueDiv.innerHTML = html;
+  }
+
+  updateTimestamp();
+
+  // Auto-refresh KPIs every 5 seconds (respects active filters)
+  setInterval(async () => {
+    try {
+      const r = await apiFetch('/api/executive/summary' + execFilterParams());
+      const ov = r.plant_oee || 0;
+      document.getElementById('kpiOee').innerHTML = ov.toFixed(1) + '<span class="kpi-unit">%</span>';
+      document.getElementById('kpiOtd').innerHTML = (r.on_time_pct||0).toFixed(1) + '<span class="kpi-unit">%</span>';
+      document.getElementById('kpiCost').innerHTML = '$' + fmt(r.cost_per_kft||0, 2);
+      document.getElementById('kpiScrap').innerHTML = '$' + fmt(r.total_scrap_cost||0, 0);
+      document.getElementById('kpiRevenue').innerHTML = '$' + fmt(r.avg_revenue_per_kft||0, 2);
+      document.getElementById('kpiMargin').innerHTML = (r.margin_pct||0).toFixed(1) + '<span class="kpi-unit">%</span>';
+      document.getElementById('kpiEnergy').innerHTML = '$' + fmt(r.total_energy_cost||0, 0);
+      updateTimestamp();
+    } catch(e) {}
+  }, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  populateExecWC();
+  populateExecProduct();
+  await loadExecDashboard();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,613 @@
+{% extends "base.html" %}
+{% set active_page = "about" %}
+{% block title %}About SodhiCable — MES{% endblock %}
+{% block content %}
+<h1 class="page-title">About SodhiCable MES</h1>
+<p class="page-subtitle">Company profile, ISA-95 architecture, MESA-11 mapping, technology stack, and literature references</p>
+
+<!-- ── Tab Bar ──────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-profile">Company Profile</button>
+  <button class="tab-btn" data-tab="tab-arch">Architecture</button>
+  <button class="tab-btn" data-tab="tab-beyond">Beyond MESA</button>
+  <button class="tab-btn" data-tab="tab-tech">Technology</button>
+  <button class="tab-btn" data-tab="tab-refs">References</button>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 1 — Company Profile                                          -->
+<!-- ================================================================ -->
+<div class="tab-content active" id="tab-profile">
+  <div class="chart-card" style="padding:24px 28px;">
+    <h2 style="margin:0 0 4px; font-size:20px;">SodhiCable LLC &mdash; Manufacturing Excellence in Wire &amp; Cable</h2>
+    <p style="color:var(--text-muted); margin:0 0 18px; font-size:13px;">Fictitious company created for ISE 573 (Manufacturing Systems) at the University of Rhode Island</p>
+
+    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom:20px;">
+      <div class="kpi-card blue"><div class="kpi-label">Founded</div><div class="kpi-value" style="font-size:22px;">2008</div><div class="kpi-target">Warwick, Rhode Island</div></div>
+      <div class="kpi-card green"><div class="kpi-label">Annual Revenue</div><div class="kpi-value" style="font-size:22px;">$45M</div><div class="kpi-target">fiscal year 2025</div></div>
+      <div class="kpi-card"><div class="kpi-label">Employees</div><div class="kpi-value" style="font-size:22px;">~200</div><div class="kpi-target">across 3 facilities</div></div>
+      <div class="kpi-card"><div class="kpi-label">Primary Plant</div><div class="kpi-value" style="font-size:18px;">Warwick, RI</div><div class="kpi-target">25 WCs &middot; 150,000 sq ft</div></div>
+      <div class="kpi-card"><div class="kpi-label">Distribution</div><div class="kpi-value" style="font-size:16px;">SC &amp; TX</div><div class="kpi-target">Summerville, SC &middot; Houston, TX</div></div>
+    </div>
+
+    <!-- Market Segments -->
+    <h3 style="margin:24px 0 10px;">Market Segments</h3>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead>
+          <tr><th>Segment</th><th>Revenue Share</th><th>Key Customers</th><th>Products</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge-status badge-active" style="font-weight:600;">Defense / MIL-SPEC</span></td>
+            <td>35%</td>
+            <td>NAVSEA, General Dynamics, Raytheon, L3Harris</td>
+            <td>LSOH shipboard, MIL-DTL-24643</td>
+          </tr>
+          <tr>
+            <td><span class="badge-status badge-warning" style="font-weight:600;">Oil &amp; Gas</span></td>
+            <td>25%</td>
+            <td>Major operators</td>
+            <td>DHT (down-hole, 260&deg;C rated), ESP cable</td>
+          </tr>
+          <tr>
+            <td><span class="badge-status badge-info" style="font-weight:600;">Industrial</span></td>
+            <td>25%</td>
+            <td>Caterpillar, Siemens</td>
+            <td>Instrumentation, control cable, tray cable</td>
+          </tr>
+          <tr>
+            <td><span class="badge-status" style="font-weight:600; background:var(--bg-tertiary);">Infrastructure</span></td>
+            <td>15%</td>
+            <td>Duke Energy, National Grid, ConEdison</td>
+            <td>MV power cable, building wire</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Competitive Landscape (Gap 1) -->
+    <div class="chart-card" style="margin-top:20px;border-left:4px solid var(--accent-red)">
+      <h3>Competitive Landscape</h3>
+      <p style="color:var(--text-secondary);font-size:13px;margin-top:8px;line-height:1.7">
+        Wire and cable manufacturing is a consolidating industry. Between 2015-2025, the top 5 manufacturers increased their combined market share from 45% to 62%, squeezing mid-size specialty players like SodhiCable.
+      </p>
+      <table class="data-table" style="margin-top:12px">
+        <thead><tr><th>Competitor</th><th>Revenue</th><th>Focus</th><th>SodhiCable Differentiation</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Prysmian / General Cable</strong></td><td>$16B (global)</td><td>Full-spectrum, acquired General Cable 2018</td><td>Cannot match small-lot MTO agility (<500 KFT runs)</td></tr>
+          <tr><td><strong>Southwire</strong></td><td>$8B</td><td>Largest US manufacturer, commodity + specialty</td><td>Limited MIL-SPEC certifications, slower custom quoting</td></tr>
+          <tr><td><strong>Encore Wire</strong></td><td>$2.5B</td><td>Commodity building wire (THHN, NM-B)</td><td>No specialty/MIL-SPEC capability</td></tr>
+          <tr><td><strong>Belden</strong></td><td>$2.5B</td><td>Industrial networking, specialty signal cable</td><td>No power cable or armored products</td></tr>
+        </tbody>
+      </table>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:8px">
+        SodhiCable's competitive position depends on operational excellence — OEE >85%, scrap <3%, and on-time delivery >95%. The MES is the primary tool for achieving and sustaining these targets.
+      </p>
+    </div>
+
+    <div class="chart-card" style="margin-top:16px;border-left:4px solid var(--accent-blue)">
+      <h3>Customer-Driven MES Requirements</h3>
+      <p style="color:var(--text-secondary);font-size:13px;margin-top:8px;line-height:1.7">
+        Different customer segments impose different MES requirements. The system must serve all four simultaneously:
+      </p>
+      <table class="data-table" style="margin-top:12px">
+        <thead><tr><th>Segment</th><th>Key Requirement</th><th>MES Functions</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Defense / MIL-SPEC</strong></td><td>Certificate of Conformance (C of C) per reel</td><td>F4, F7, F10</td><td>Full lot genealogy traceable to raw copper heat number. QPL (Qualified Products List) maintenance. Every reel ships with a signed C of C documenting test results, material traceability, and process compliance.</td></tr>
+          <tr><td><strong>Oil & Gas</strong></td><td>API certification + harsh-environment testing</td><td>F7, F8</td><td>H&#8322;S resistance testing, 260&deg;C temperature rating verification. Process control must maintain tight temperature windows (&plusmn;3&deg;F) during FEP extrusion.</td></tr>
+          <tr><td><strong>Industrial</strong></td><td>High volume, low cost per KFT</td><td>F1, F2, F11</td><td>Standard UL/CSA certifications. Focus on scheduling efficiency, changeover minimization, and OEE optimization to maintain margins.</td></tr>
+          <tr><td><strong>Infrastructure</strong></td><td>Large reels, on-time delivery</td><td>F3, F10</td><td>Utility-grade cable on 5,000+ ft reels. MES focus on reel tracking accuracy and dispatch efficiency for truck-load shipments.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Product Portfolio -->
+    <h3 style="margin:24px 0 10px;">Product Portfolio &mdash; 31 Cable Types across 9 Families</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:10px; margin-bottom:20px;">
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid var(--accent-blue);"><strong>A</strong> &mdash; Instrumentation (foil/braid shield)</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid var(--accent-green);"><strong>B</strong> &mdash; Armored Control</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid var(--accent-gold);"><strong>C</strong> &mdash; Down-Hole Temperature (DHT)</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid #e74c3c;"><strong>D</strong> &mdash; Down-Hole Flat Pack</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid #9b59b6;"><strong>I</strong> &mdash; Insulated Conductors</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid #1abc9c;"><strong>M</strong> &mdash; Medium Voltage (15 kV)</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid #e67e22;"><strong>R</strong> &mdash; Utility / Building Wire</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid #2980b9;"><strong>S</strong> &mdash; Shipboard / LSOH</div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:10px 14px; border-left:3px solid #c0392b;"><strong>U</strong> &mdash; UL2196 Fire-Rated</div>
+    </div>
+
+    <!-- Why MES? -->
+    <h3 style="margin:24px 0 10px;">Why MES?</h3>
+    <p style="color:var(--text-secondary); line-height:1.65;">Before MES implementation, SodhiCable faced significant operational challenges that motivated this project:</p>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin:14px 0 20px;">
+      <div class="chart-card" style="padding:16px; border-left:3px solid #e74c3c;">
+        <h4 style="margin:0 0 10px; color:#e74c3c;">Before MES (Pain Points)</h4>
+        <ul style="margin:0; padding-left:18px; line-height:1.8; color:var(--text-secondary);">
+          <li><strong>5.2% scrap rate</strong> (industry avg: 3%)</li>
+          <li><strong>87% on-time delivery</strong> (target: 95%)</li>
+          <li>Paper-based lot tracking with <strong>24-hour lag</strong></li>
+          <li>No real-time process monitoring</li>
+          <li>Compliance audit findings (MIL-SPEC documentation gaps)</li>
+        </ul>
+      </div>
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-green);">
+        <h4 style="margin:0 0 10px; color:var(--accent-green);">MES Targets</h4>
+        <ul style="margin:0; padding-left:18px; line-height:1.8; color:var(--text-secondary);">
+          <li>Scrap rate <strong>&lt; 3%</strong></li>
+          <li>On-time delivery <strong>&gt; 95%</strong></li>
+          <li>OEE <strong>&gt; 85%</strong> (world class)</li>
+          <li>Real-time lot traceability <strong>&lt; 10 seconds</strong></li>
+          <li><strong>Zero</strong> compliance findings</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Live Stats -->
+    <h3 style="margin:24px 0 10px;">Live Database Statistics</h3>
+    <div class="kpi-grid" id="liveStats" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
+      <div class="kpi-card"><div class="kpi-label">Products</div><div class="kpi-value" id="stat-products">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Work Centers</div><div class="kpi-value" id="stat-work_centers">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Materials</div><div class="kpi-value" id="stat-materials">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Customers</div><div class="kpi-value" id="stat-customers">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Work Orders</div><div class="kpi-value" id="stat-work_orders">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Personnel</div><div class="kpi-value" id="stat-personnel">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Equipment</div><div class="kpi-value" id="stat-equipment">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">SPC Readings</div><div class="kpi-value" id="stat-spc_readings">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Process Data (Live)</div><div class="kpi-value" id="stat-process_data_live">--</div></div>
+      <div class="kpi-card blue"><div class="kpi-label">Total Tables</div><div class="kpi-value" id="stat-total_tables">--</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 2 — ISA-95 Architecture                                      -->
+<!-- ================================================================ -->
+<div class="tab-content" id="tab-arch">
+  <div class="chart-card" style="padding:24px 28px;">
+    <h2 style="margin:0 0 6px; font-size:20px;">ISA-95 Functional Hierarchy</h2>
+    <p style="color:var(--text-muted); margin:0 0 24px; font-size:13px;">ANSI/ISA-95.00.01-2010 &mdash; Enterprise-Control System Integration. SodhiCable implements Levels 0&ndash;4.</p>
+
+    <!-- CSS Pyramid -->
+    <div style="display:flex; flex-direction:column; align-items:center; gap:4px; margin-bottom:30px;">
+      <!-- Level 4 -->
+      <div style="width:55%; background:linear-gradient(135deg, #7c3aed, #9333ea); color:#fff; border-radius:8px 8px 2px 2px; padding:14px 20px; text-align:center;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:4px;">Level 4 &mdash; Business Planning &amp; Logistics</div>
+        <div style="font-size:12px; opacity:0.9;">ERP, MRP/demand planning, sales order management, financial reporting, supply chain coordination</div>
+        <div style="font-size:11px; margin-top:4px; opacity:0.75;">SodhiCable: <a href="/mrp" style="color:#e9d5ff;">/mrp</a> &middot; <a href="/sales" style="color:#e9d5ff;">/sales</a> &middot; <a href="/executive" style="color:#e9d5ff;">/executive</a> &middot; <a href="/suppliers" style="color:#e9d5ff;">/suppliers</a></div>
+      </div>
+      <!-- Level 3 (highlighted) -->
+      <div style="width:70%; background:linear-gradient(135deg, #2563eb, #3b82f6); color:#fff; border-radius:4px; padding:16px 20px; text-align:center; box-shadow:0 0 20px rgba(59,130,246,0.4); border:2px solid #60a5fa;">
+        <div style="font-weight:700; font-size:16px; margin-bottom:4px;">Level 3 &mdash; Manufacturing Operations Management (MOM/MES)</div>
+        <div style="font-size:11px; background:rgba(255,255,255,0.15); border-radius:4px; display:inline-block; padding:2px 10px; margin-bottom:6px; font-weight:600;">THIS IS WHERE THE MES OPERATES</div>
+        <div style="font-size:12px; opacity:0.9;">MESA-11 Functions: F1 Resource Allocation, F2 Scheduling, F3 Dispatching, F4 Document Control, F5 Data Collection, F6 Labor, F7 Quality/SPC, F8 Process Mgmt, F9 Maintenance, F10 Traceability, F11 Performance Analysis</div>
+        <div style="font-size:11px; margin-top:6px; opacity:0.75;">SodhiCable: <a href="/scheduling" style="color:#bfdbfe;">/scheduling</a> &middot; <a href="/dispatch" style="color:#bfdbfe;">/dispatch</a> &middot; <a href="/quality" style="color:#bfdbfe;">/quality</a> &middot; <a href="/labor" style="color:#bfdbfe;">/labor</a> &middot; <a href="/equipment" style="color:#bfdbfe;">/equipment</a> &middot; <a href="/traceability" style="color:#bfdbfe;">/traceability</a> &middot; <a href="/performance" style="color:#bfdbfe;">/performance</a></div>
+      </div>
+      <!-- Level 2 -->
+      <div style="width:82%; background:linear-gradient(135deg, #ca8a04, #eab308); color:#1a1a2e; border-radius:4px; padding:14px 20px; text-align:center;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:4px;">Level 2 &mdash; Supervisory Control &amp; Automated Control (SCADA / DCS / PLC)</div>
+        <div style="font-size:12px;">PLC logic, DCS control loops, PID controllers, HMI operator screens, alarm management, batch sequencing</div>
+        <div style="font-size:11px; margin-top:4px; opacity:0.75;">SodhiCable: <a href="/scada" style="color:#1a1a2e;">/scada</a> (SCADA drill-down) &middot; <a href="/process" style="color:#1a1a2e;">/process</a> (PID, CUSUM/EWMA, alarms)</div>
+      </div>
+      <!-- Level 1 -->
+      <div style="width:92%; background:linear-gradient(135deg, #16a34a, #22c55e); color:#fff; border-radius:4px; padding:14px 20px; text-align:center;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:4px;">Level 1 &mdash; Sensing &amp; Actuation (Field Devices)</div>
+        <div style="font-size:12px; opacity:0.9;">Sensors (thermocouples, laser micrometers, pressure transducers), actuators (heater SCRs, motor drives, valve positioners), spark testers, encoders</div>
+        <div style="font-size:11px; margin-top:4px; opacity:0.75;">SodhiCable: <a href="/scada" style="color:#a7f3d0;">/scada</a> (sensor drill-down) &middot; process_data_live, environmental_readings, spark_test_log</div>
+      </div>
+      <!-- Level 0 -->
+      <div style="width:100%; background:linear-gradient(135deg, #1e3a5f, #1e40af); color:#fff; border-radius:2px 2px 8px 8px; padding:14px 20px; text-align:center;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:4px;">Level 0 &mdash; Physical Production Process</div>
+        <div style="font-size:12px; opacity:0.9;">The actual physical and chemical transformations: compound mixing (Banbury), wire drawing, insulation extrusion, PLCV vulcanization, braiding, cabling, armoring, spark/hipot testing, cutting, packaging</div>
+        <div style="font-size:11px; margin-top:4px; opacity:0.75;">SodhiCable: <a href="/des" style="color:#93c5fd;">/des</a> (DES simulation) &middot; <a href="/simulation" style="color:#93c5fd;">/simulation</a> (8-stage factory model)</div>
+      </div>
+    </div>
+
+    <!-- ISA-95 Data Flow Examples (Gap 3) -->
+    <div class="chart-card" style="margin-top:20px">
+      <h3>Data Flow Examples — How Information Crosses ISA-95 Boundaries</h3>
+      <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">These worked examples show how events propagate through the automation hierarchy in a real production scenario.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(350px,1fr));gap:16px">
+
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;border-left:4px solid var(--accent-red)">
+          <h4 style="color:var(--accent-red);margin-bottom:8px">Flow 1: Spark Test Failure Cascade</h4>
+          <div style="font-family:monospace;font-size:12px;line-height:2;color:var(--text-secondary)">
+            <div><span class="badge badge-green">L1</span> Spark tester detects pinhole at 1,247 ft (3.2 kV)</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; process_data_live INSERT</div>
+            <div><span class="badge badge-yellow">L2</span> Alarm triggered, line speed reduced, hold signal sent</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; process_deviations INSERT, severity='Critical'</div>
+            <div><span class="badge badge-blue">L3</span> F7: NCR auto-created &rarr; F8: Hold placed &rarr; F10: Lot quarantined</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; shift_reports UPDATE, scrap_log INSERT</div>
+            <div><span style="background:rgba(139,92,246,0.15);color:#a78bfa;padding:2px 8px;border-radius:4px;font-size:11px">L4</span> Yield KPI decremented, scrap cost added, promise date re-evaluated</div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;border-left:4px solid var(--accent-yellow)">
+          <h4 style="color:var(--accent-yellow);margin-bottom:8px">Flow 2: Temperature PID Control Loop</h4>
+          <div style="font-family:monospace;font-size:12px;line-height:2;color:var(--text-secondary)">
+            <div><span class="badge badge-green">L1</span> Thermocouple reads 379&deg;F (setpoint 365&deg;F, error +14&deg;F)</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; process_data_live</div>
+            <div><span class="badge badge-yellow">L2</span> PID: u(t) = Kp&middot;e + Ki&middot;&int;e + Kd&middot;de/dt &rarr; heater reduced 85%&rarr;62%</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; control output applied to actuator</div>
+            <div><span class="badge badge-green">L1</span> Thermocouple reads 371&deg;F (converging toward setpoint)</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; if |error| persists &gt; 2&sigma;</div>
+            <div><span class="badge badge-blue">L3</span> CUSUM/EWMA flags drift &rarr; F8 alarm &rarr; F9 maintenance check</div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;border-left:4px solid var(--accent-green)">
+          <h4 style="color:var(--accent-green);margin-bottom:8px">Flow 3: End-of-Shift Rollup</h4>
+          <div style="font-family:monospace;font-size:12px;line-height:2;color:var(--text-secondary)">
+            <div><span class="badge badge-green">L1-2</span> 480 min sensor data, 12 SPC samples, 3 spark tests collected</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; aggregated per work center</div>
+            <div><span class="badge badge-blue">L3</span> F11: OEE = 82.1% (A=91%, P=93%, Q=97%), FPY=96.8%, 2 NCRs</div>
+            <div style="color:var(--text-muted);padding-left:20px">&darr; shift_reports INSERT</div>
+            <div><span style="background:rgba(139,92,246,0.15);color:#a78bfa;padding:2px 8px;border-radius:4px;font-size:11px">L4</span> Executive dashboard updated, cost/KFT recalculated, delivery dates adjusted</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MESA-11 Mapping Table -->
+    <h3 style="margin:20px 0 10px;">MESA-11 Functional Mapping</h3>
+    <p style="color:var(--text-muted); font-size:13px; margin-bottom:12px;">Every MESA-11 function is implemented as a dedicated Flask blueprint with its own API layer, page template, and database tables.</p>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead>
+          <tr><th>MESA #</th><th>Function</th><th>Route</th><th>Key Capabilities</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>F1</strong></td><td>Resource Allocation &amp; Status</td><td><a href="/resources">/resources</a></td><td>Work center capacity, personnel assignment, equipment status</td></tr>
+          <tr><td><strong>F2</strong></td><td>Operations / Detailed Scheduling</td><td><a href="/scheduling">/scheduling</a></td><td>Gantt, SPT/EDD/WSPT/CR, 12 optimization solvers (LP, IP, TSP, bin-packing)</td></tr>
+          <tr><td><strong>F3</strong></td><td>Dispatching Production Units</td><td><a href="/dispatch">/dispatch</a></td><td>Queue management, priority dispatch, WIP control</td></tr>
+          <tr><td><strong>F4</strong></td><td>Document Control</td><td><a href="/documents">/documents</a></td><td>SOPs, MIL-SPEC docs, version control, compliance matrix</td></tr>
+          <tr><td><strong>F5</strong></td><td>Data Collection / Acquisition</td><td><a href="/datacollect">/datacollect</a></td><td>Real-time sensor ingestion, process_data_live streaming</td></tr>
+          <tr><td><strong>F6</strong></td><td>Labor Management</td><td><a href="/labor">/labor</a></td><td>Crew scheduling, skill matrix, productivity tracking, overtime</td></tr>
+          <tr><td><strong>F7</strong></td><td>Quality Management</td><td><a href="/quality">/quality</a></td><td>SPC (X-bar/R, Cpk), CUSUM, EWMA, NCR, CAPA</td></tr>
+          <tr><td><strong>F8</strong></td><td>Process Management</td><td><a href="/process">/process</a></td><td>PID simulation, setpoint control, real-time alarms</td></tr>
+          <tr><td><strong>F9</strong></td><td>Maintenance Management</td><td><a href="/equipment">/equipment</a></td><td>PM scheduling, MTBF/MTTR, failure tracking, TPM</td></tr>
+          <tr><td><strong>F10</strong></td><td>Product Tracking &amp; Genealogy</td><td><a href="/traceability">/traceability</a></td><td>Lot/serial genealogy, material genealogy, forward/backward trace</td></tr>
+          <tr><td><strong>F11</strong></td><td>Performance Analysis</td><td><a href="/performance">/performance</a></td><td>OEE drill-down, Pareto, trend analysis, shift reports</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 3 — Beyond MESA-11                                           -->
+<!-- ================================================================ -->
+<div class="tab-content" id="tab-beyond">
+  <div class="chart-card" style="padding:24px 28px;">
+    <h2 style="margin:0 0 6px; font-size:20px;">Beyond the MESA-11 Framework</h2>
+    <p style="color:var(--text-muted); margin:0 0 20px; font-size:13px;">SodhiCable MES extends well beyond the traditional 11 MESA functions with advanced analytics, simulation, and decision-support modules.</p>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); gap:14px;">
+
+      <!-- DES -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-blue);">
+        <h4 style="margin:0 0 6px;">1. Discrete Event Simulation</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">8-stage factory model with configurable arrival rates, queueing analytics (M/M/1, M/M/c, M/G/1), breakdown injection, and what-if scenario analysis using Server-Sent Events for real-time streaming.</p>
+        <a href="/des" style="font-size:12px; font-weight:600;">/des</a> &middot; <a href="/simulation" style="font-size:12px; font-weight:600;">/simulation</a>
+      </div>
+
+      <!-- Predictive Maintenance -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-green);">
+        <h4 style="margin:0 0 6px;">2. Predictive Maintenance</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Failure probability modeling P(fail) = 1 - e<sup>(-t/MTBF)</sup>, cost-of-delay analysis, optimal PM interval calculation, and risk-based maintenance scheduling.</p>
+        <a href="/predictive" style="font-size:12px; font-weight:600;">/predictive</a>
+      </div>
+
+      <!-- Supply Chain Risk -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-gold);">
+        <h4 style="margin:0 0 6px;">3. Supply Chain Risk</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Lead time variability analysis, single-source dependency detection, coverage days calculation, and risk scoring across the entire material supply base.</p>
+        <a href="/supply-risk" style="font-size:12px; font-weight:600;">/supply-risk</a>
+      </div>
+
+      <!-- Bottleneck Analysis -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid #e74c3c;">
+        <h4 style="margin:0 0 6px;">4. Bottleneck Analysis</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Kingman's G/G/c approximation for wait-time estimation, shifting bottleneck identification, what-if capacity planning, and utilization heat-maps.</p>
+        <a href="/bottleneck" style="font-size:12px; font-weight:600;">/bottleneck</a>
+      </div>
+
+      <!-- MRP -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid #9b59b6;">
+        <h4 style="margin:0 0 6px;">5. Material Requirements Planning</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Multi-level BOM explosion with 7 lot-sizing methods: Lot-for-Lot (L4L), EOQ, POQ, Fixed Order Quantity (FOQ), Silver-Meal, Wagner-Whitin, and EPQ.</p>
+        <a href="/mrp" style="font-size:12px; font-weight:600;">/mrp</a>
+      </div>
+
+      <!-- Sales / ATP -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid #1abc9c;">
+        <h4 style="margin:0 0 6px;">6. Customer Order Management</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Sales order tracking, Available-to-Promise (ATP) calculation, revenue analysis by customer and product family, and demand forecasting.</p>
+        <a href="/sales" style="font-size:12px; font-weight:600;">/sales</a>
+      </div>
+
+      <!-- Supplier Scorecards -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid #e67e22;">
+        <h4 style="margin:0 0 6px;">7. Supplier Scorecards</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Vendor performance rating, lead time tracking, on-time delivery scores, quality metrics, and availability analysis across the supply base.</p>
+        <a href="/suppliers" style="font-size:12px; font-weight:600;">/suppliers</a>
+      </div>
+
+      <!-- AI/ML -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid #2980b9;">
+        <h4 style="margin:0 0 6px;">8. AI / ML Analytics Layer</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Anomaly detection on process data, predictive quality scoring, prescriptive scheduling recommendations, and pattern recognition on SPC data.</p>
+        <a href="/ai" style="font-size:12px; font-weight:600;">/ai</a>
+      </div>
+
+      <!-- SCADA -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid #c0392b;">
+        <h4 style="margin:0 0 6px;">9. SCADA Visualization</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">ISA-95 Level 1-2 drill-down, real-time sensor views, work-center status dashboards, environmental readings, and alarm management displays.</p>
+        <a href="/process" style="font-size:12px; font-weight:600;">/process</a>
+      </div>
+
+      <!-- Energy Management -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-green);">
+        <h4 style="margin:0 0 6px;">10. Energy Management</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">kWh per KFT tracking per work center. Extrusion heaters consume 50-150 kW, draw motors 15-50 kW, compound mixers 75-200 kW. Energy cost typically represents 8-12% of COGS in wire &amp; cable. Tracks consumption trends and identifies energy waste.</p>
+        <span style="font-size:12px; font-weight:600; color:var(--accent-green);">Implemented</span> &mdash; <a href="/scada" style="font-size:12px; font-weight:600;">/scada</a>
+      </div>
+
+      <!-- Environmental & Sustainability -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-yellow);">
+        <h4 style="margin:0 0 6px;">11. Environmental &amp; Sustainability</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Scrap-as-waste tracking with copper recovery rate ~98%. Compound waste stream monitoring. Carbon footprint per KFT: Scope 1 (natural gas for curing ovens) and Scope 2 (electricity for extrusion). Supports ESG reporting requirements.</p>
+        <span style="font-size:12px; font-weight:600; color:var(--accent-yellow);">Partial &mdash; scrap tracking active, carbon accounting planned</span>
+      </div>
+
+      <!-- Supply Chain Integration -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-yellow);">
+        <h4 style="margin:0 0 6px;">12. Supply Chain Integration</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">Beyond passive vendor scoring: vendor-managed inventory (VMI) for copper rod with auto-replenishment at min level, consignment stock management for specialty compounds, EDI 856/810 integration for advance shipping notices and invoices.</p>
+        <span style="font-size:12px; font-weight:600; color:var(--accent-yellow);">Partial &mdash; supplier scorecards active, VMI/EDI planned</span>
+      </div>
+
+      <!-- Cybersecurity / OT Security -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-yellow);">
+        <h4 style="margin:0 0 6px;">13. Cybersecurity / OT Security</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">ISA/IEC 62443 zones and conduits model. Network segmentation between IT (Level 4) and OT (Levels 0-3) via DMZ. Audit trail for all data modifications (implemented). Role-based access control for operator/supervisor/manager/executive views. Intrusion detection at Level 2-3 boundary.</p>
+        <span style="font-size:12px; font-weight:600; color:var(--accent-yellow);">Partial &mdash; audit trail active, RBAC planned</span>
+      </div>
+
+      <!-- Digital Twin -->
+      <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-yellow);">
+        <h4 style="margin:0 0 6px;">14. Digital Twin</h4>
+        <p style="margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.6;">DES simulation engine provides the foundation for a process digital twin. 8-stage factory model with configurable inter-arrival times, service distributions, and breakdown rates. Future: live synchronization between physical process and simulation for real-time what-if analysis ('If DRAW-1 breaks down now, what happens to the schedule?').</p>
+        <span style="font-size:12px; font-weight:600; color:var(--accent-yellow);">Partial &mdash; DES active, live sync planned</span> &mdash; <a href="/simulation" style="font-size:12px; font-weight:600;">/simulation</a>
+      </div>
+
+    </div>
+
+    <p style="color:var(--text-muted); font-size:13px; line-height:1.7; margin-top:20px; padding:14px 18px; background:var(--bg-secondary); border-radius:8px;">
+      MESA International expanded beyond the original 11 functions with their Strategic Initiatives model (2004+), recognizing that modern MES/MOM systems must address Lean Manufacturing, Quality Management, Product Lifecycle Management, Asset Performance Management, and Real-Time Enterprise integration. SodhiCable MES v4.0 incorporates elements of all five strategic initiatives.
+    </p>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 4 — Technology Stack                                         -->
+<!-- ================================================================ -->
+<div class="tab-content" id="tab-tech">
+  <div class="chart-card" style="padding:24px 28px;">
+    <h2 style="margin:0 0 6px; font-size:20px;">Technology Stack</h2>
+    <p style="color:var(--text-muted); margin:0 0 20px; font-size:13px;">Deliberately minimal dependency footprint &mdash; the entire MES runs with a single pip install.</p>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap:14px; margin-bottom:24px;">
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid var(--accent-blue);">
+        <div style="font-weight:700; margin-bottom:4px;">Backend</div>
+        <div style="color:var(--text-secondary); font-size:13px;">Python 3.x + Flask 3.0 (the only external dependency)</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid var(--accent-green);">
+        <div style="font-weight:700; margin-bottom:4px;">Database</div>
+        <div style="color:var(--text-secondary); font-size:13px;">SQLite3 with WAL mode, 64+ tables, 9 analytical views</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid var(--accent-gold);">
+        <div style="font-weight:700; margin-bottom:4px;">Frontend</div>
+        <div style="color:var(--text-secondary); font-size:13px;">Chart.js 4.4 (vendored offline), vanilla JavaScript, responsive CSS Grid</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid #9b59b6;">
+        <div style="font-weight:700; margin-bottom:4px;">Algorithms</div>
+        <div style="color:var(--text-secondary); font-size:13px;">12 optimization solvers (LP, IP, TSP, bin-packing) &mdash; pure Python, no NumPy/SciPy</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid #e74c3c;">
+        <div style="font-weight:700; margin-bottom:4px;">Simulation</div>
+        <div style="color:var(--text-secondary); font-size:13px;">Discrete Event Simulation with Server-Sent Events (SSE) real-time streaming</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid #1abc9c;">
+        <div style="font-weight:700; margin-bottom:4px;">SPC</div>
+        <div style="color:var(--text-secondary); font-size:13px;">X-bar/R, Cpk, CUSUM, EWMA &mdash; all implemented from first principles</div>
+      </div>
+    </div>
+
+    <div class="chart-card" style="padding:16px; border-left:3px solid var(--accent-gold); margin-bottom:20px;">
+      <h4 style="margin:0 0 6px;">Installation</h4>
+      <pre style="background:var(--bg-primary); padding:12px 16px; border-radius:6px; font-size:13px; overflow-x:auto; margin:0;"><code>pip install flask      # that's it
+flask run              # starts on localhost:5000</code></pre>
+    </div>
+
+    <h3 style="margin:20px 0 10px;">Design Philosophy</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:12px; margin-bottom:24px;">
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:12px 16px;">
+        <strong style="color:var(--accent-green);">Zero Infrastructure</strong>
+        <div style="color:var(--text-secondary); font-size:13px; margin-top:4px;">No Docker, Redis, Postgres &mdash; runs on any laptop with Python installed</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:12px 16px;">
+        <strong style="color:var(--accent-blue);">Pure Stdlib Algorithms</strong>
+        <div style="color:var(--text-secondary); font-size:13px; margin-top:4px;">No commercial solver licenses required &mdash; every algorithm in plain Python</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:12px 16px;">
+        <strong style="color:var(--accent-gold);">Offline-Capable</strong>
+        <div style="color:var(--text-secondary); font-size:13px; margin-top:4px;">Chart.js vendored locally, no CDN dependencies &mdash; works without internet</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:12px 16px;">
+        <strong style="color:#9b59b6;">Educational</strong>
+        <div style="color:var(--text-secondary); font-size:13px; margin-top:4px;">Every formula is visible in the source code &mdash; designed for learning and inspection</div>
+      </div>
+    </div>
+
+    <!-- System Health -->
+    <h3 style="margin:20px 0 10px;">System Health</h3>
+    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+      <div class="kpi-card" id="healthStatus"><div class="kpi-label">Status</div><div class="kpi-value" id="health-status" style="font-size:16px;">--</div></div>
+      <div class="kpi-card" id="healthDb"><div class="kpi-label">Database</div><div class="kpi-value" id="health-db" style="font-size:16px;">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Response Time</div><div class="kpi-value" id="health-rt">--<span class="kpi-unit">ms</span></div></div>
+      <div class="kpi-card"><div class="kpi-label">Version</div><div class="kpi-value" id="health-ver" style="font-size:18px;">--</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 5 — References                                               -->
+<!-- ================================================================ -->
+<div class="tab-content" id="tab-refs">
+  <div class="chart-card" style="padding:24px 28px;">
+    <h2 style="margin:0 0 6px; font-size:20px;">Literature Review &amp; References</h2>
+    <p style="color:var(--text-muted); margin:0 0 20px; font-size:13px;">Pointers for academic context, standards, and related work in MES/MOM research.</p>
+
+    <!-- Key Journals -->
+    <h3 style="margin:0 0 10px;">Key Journals</h3>
+    <div style="overflow-x:auto; margin-bottom:24px;">
+      <table class="data-table">
+        <thead><tr><th>Journal</th><th>Publisher</th><th>Relevance</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Journal of Manufacturing Systems</strong></td><td>Elsevier</td><td>MES architecture, smart manufacturing, Industry 4.0</td></tr>
+          <tr><td><strong>Computers in Industry</strong></td><td>Elsevier</td><td>IT integration in manufacturing, digital twin, MOM</td></tr>
+          <tr><td><strong>International Journal of Production Research</strong></td><td>Taylor &amp; Francis</td><td>Scheduling, OEE, production planning, simulation</td></tr>
+          <tr><td><strong>Procedia CIRP</strong></td><td>Elsevier (conference)</td><td>Conference proceedings on manufacturing engineering</td></tr>
+          <tr><td><strong>IEEE Transactions on Industrial Informatics</strong></td><td>IEEE</td><td>Industrial IoT, cyber-physical systems, SCADA</td></tr>
+          <tr><td><strong>IFAC-PapersOnLine</strong></td><td>Elsevier (IFAC)</td><td>IFAC MIM (Manufacturing Modelling, Management and Control) conference proceedings. Venue for manufacturing control systems research.</td></tr>
+          <tr><td><strong>IEEE CASE</strong></td><td>IEEE</td><td>IEEE International Conference on Automation Science and Engineering. Covers intelligent manufacturing and industrial automation.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Standards -->
+    <h3 style="margin:0 0 10px;">Standards</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap:12px; margin-bottom:24px;">
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid var(--accent-blue);">
+        <div style="font-weight:700;">ISA-95</div>
+        <div style="color:var(--text-secondary); font-size:13px;">Enterprise-Control System Integration (ANSI/ISA-95.00.01-2010). Defines the functional hierarchy (Levels 0&ndash;4) implemented throughout this project.</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid var(--accent-green);">
+        <div style="font-weight:700;">ISA-88</div>
+        <div style="color:var(--text-secondary); font-size:13px;">Batch Control (ANSI/ISA-88.00.01-2010). Physical and procedural models for batch manufacturing processes.</div>
+      </div>
+      <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; border-left:3px solid var(--accent-gold);">
+        <div style="font-weight:700;">MESA International</div>
+        <div style="color:var(--text-secondary); font-size:13px;">MES/MOM Methodology &mdash; defines the 11 core MES functions (mesa.org). The foundation for this project's module structure.</div>
+      </div>
+    </div>
+
+    <!-- Search Terms -->
+    <h3 style="margin:0 0 10px;">Search Terms for Literature Review</h3>
+    <div style="background:var(--bg-secondary); border-radius:8px; padding:14px 18px; margin-bottom:24px;">
+      <ul style="margin:0; padding-left:18px; line-height:2; color:var(--text-secondary); font-size:13px;">
+        <li><code>"Manufacturing Execution System implementation case study"</code></li>
+        <li><code>"MES architecture open-source"</code></li>
+        <li><code>"ISA-95 implementation wire cable"</code></li>
+        <li><code>"AI manufacturing execution system"</code></li>
+        <li><code>"Digital twin MES integration"</code></li>
+      </ul>
+    </div>
+
+    <!-- Research Gap Statement (Gap 9) -->
+    <div class="chart-card" style="margin-top:20px;border-left:4px solid var(--accent-gold);padding:20px">
+      <h3 style="color:var(--accent-gold)">Research Gap &amp; Contribution</h3>
+      <p style="color:var(--text-primary);font-size:14px;line-height:1.8;margin-top:8px">
+        To our knowledge, <strong>no peer-reviewed publication presents a complete MESA-11 implementation reference design for the wire and cable manufacturing industry.</strong> Existing MES literature either covers individual functions (SPC, scheduling, OEE) in isolation or presents vendor-specific case studies without reproducible architecture.
+      </p>
+      <p style="color:var(--text-secondary);font-size:13px;line-height:1.7;margin-top:12px">
+        SodhiCable MES v4.0 fills this gap by providing a fully functional, open-source, single-dependency implementation covering all 11 MESA functions plus 14 beyond-MESA capabilities, with domain-specific features for continuous-process cable manufacturing including spark test integration, reel genealogy, compound shelf-life tracking, and ISA-95 Level 0-4 visualization.
+      </p>
+      <div style="margin-top:16px;padding:12px;background:var(--bg-primary);border-radius:8px">
+        <p style="color:var(--accent-gold);font-weight:700;font-size:13px">Suggested Paper Title:</p>
+        <p style="color:var(--text-primary);font-size:14px;font-style:italic">"AI-Augmented Manufacturing Execution Systems: A Complete MESA-11 Reference Implementation for Wire and Cable Manufacturing"</p>
+      </div>
+      <div style="margin-top:12px">
+        <p style="color:var(--text-muted);font-size:12px;font-weight:600">Publication Targets:</p>
+        <ul style="color:var(--text-secondary);font-size:13px;line-height:1.8;margin-left:20px">
+          <li><strong>IFAC MIM 2027</strong> &mdash; Manufacturing Modelling, Management and Control (conference paper)</li>
+          <li><strong>IEEE CASE 2027</strong> &mdash; Automation Science and Engineering (conference paper)</li>
+          <li><strong>Journal of Manufacturing Systems</strong> &mdash; Full journal article (Elsevier)</li>
+          <li><strong>Computers in Industry</strong> &mdash; Industry case study (Elsevier)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Notable Related Work -->
+    <h3 style="margin:0 0 10px;">Notable Related Work</h3>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Source</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>MESA International</strong></td>
+            <td>White papers on MES/MOM functional model &mdash; defines the MESA-11 framework used as the backbone of this project</td>
+          </tr>
+          <tr>
+            <td><strong>Siemens Opcenter</strong> (formerly Camstar)</td>
+            <td>Commercial MES reference architecture; useful for comparing industrial-grade MES with this educational implementation</td>
+          </tr>
+          <tr>
+            <td><strong>SAP Manufacturing Execution (ME)</strong></td>
+            <td>ERP-integrated MES showing how Level 3 (MES) connects to Level 4 (ERP) in the ISA-95 hierarchy</td>
+          </tr>
+          <tr>
+            <td><strong>Scholten, B. (2007)</strong></td>
+            <td><em>The Road to Integration: A Guide to Applying the ISA-95 Standard in Manufacturing.</em> ISA Press. Practical guide to ISA-95 implementation.</td>
+          </tr>
+          <tr>
+            <td><strong>Saenz de Ugarte et al. (2009)</strong></td>
+            <td><em>Manufacturing execution system &ndash; a literature review.</em> Industrial Management &amp; Data Systems, 109(8), 1218&ndash;1234. Comprehensive MES literature survey.</td>
+          </tr>
+          <tr>
+            <td><strong>Almada-Lobo (2016)</strong></td>
+            <td><em>The Industry 4.0 revolution and the future of Manufacturing Execution Systems (MES).</em> Journal of Innovation Management, 3(4), 16&ndash;21. Forward-looking analysis of MES evolution.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  // ── Load live database stats ─────────────────────────────────────
+  try {
+    const stats = await apiFetch('/api/about/stats');
+    for (const [key, val] of Object.entries(stats)) {
+      const el = document.getElementById('stat-' + key);
+      if (el) el.textContent = Number(val).toLocaleString();
+    }
+  } catch (e) { /* apiFetch already showed toast */ }
+
+  // ── Load system health ───────────────────────────────────────────
+  try {
+    const h = await apiFetch('/api/health');
+    document.getElementById('health-status').textContent = h.status || '--';
+    const statusCard = document.getElementById('healthStatus');
+    if (h.status === 'healthy') statusCard.classList.add('green');
+    else statusCard.classList.add('red');
+
+    document.getElementById('health-db').textContent = h.db_connected ? 'Connected' : 'Disconnected';
+    const dbCard = document.getElementById('healthDb');
+    if (h.db_connected) dbCard.classList.add('green');
+    else dbCard.classList.add('red');
+
+    document.getElementById('health-rt').innerHTML = (h.response_time_ms || '--') + '<span class="kpi-unit">ms</span>';
+    document.getElementById('health-ver').textContent = 'v' + (h.version || '--');
+  } catch (e) { /* apiFetch already showed toast */ }
+});
+</script>
+{% endblock %}

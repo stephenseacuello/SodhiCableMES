@@ -1,0 +1,376 @@
+{% extends "base.html" %}{% set active_page = "scheduling" %}
+{% block title %}F2 — Scheduling — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F2 — Operations Scheduling</h1>
+<p class="page-subtitle">View current schedule across all work centers — run optimization solvers — Gantt chart color-coded by product family</p>
+
+<!-- Tabs: Current Schedule vs Run Solver -->
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-schedule">Current Schedule</button>
+ <button class="tab-btn" data-tab="tab-solver">Run Solver (P1-P11)</button>
+</div>
+
+<!-- ═══ CURRENT SCHEDULE TAB ═══ -->
+<div class="tab-content active" id="tab-schedule">
+ <div class="control-panel"><div class="control-row">
+  <div class="control-group"><label>Filter Work Center</label>
+   <select id="wcFilter" onchange="loadSchedule()"><option value="">All Work Centers</option></select>
+  </div>
+  <div class="control-group"><label>Filter Work Order</label>
+   <select id="woFilter" onchange="loadSchedule()"><option value="">All Work Orders</option></select>
+  </div>
+  <div class="control-group"><label>Legend</label>
+   <span style="font-size:11px">
+    <span style="color:#3b82f6">■</span> A-Instr
+    <span style="color:#ef4444">■</span> B-Armored
+    <span style="color:#f59e0b">■</span> C-DHT
+    <span style="color:#22c55e">■</span> U-Fire
+    <span style="color:#8b5cf6">■</span> R-Utility
+    <span style="color:#ec4899">■</span> S-Ship
+    <span style="color:#14b8a6">■</span> I-Insul
+    <span style="color:#f97316">■</span> M-MV
+    <span style="color:#6366f1">■</span> D-DHole
+   </span>
+  </div>
+ </div></div>
+
+ <div class="kpi-grid" style="margin-bottom:12px">
+  <div class="kpi-card blue" id="kpi-total"><div class="kpi-label">Scheduled Jobs</div><div class="kpi-value">--</div></div>
+  <div class="kpi-card blue" id="kpi-wcs"><div class="kpi-label">Work Centers</div><div class="kpi-value">--</div></div>
+  <div class="kpi-card blue" id="kpi-makespan2"><div class="kpi-label">Max Makespan</div><div class="kpi-value">--</div><span class="kpi-unit">min</span></div>
+  <div class="kpi-card blue" id="kpi-families"><div class="kpi-label">Product Families</div><div class="kpi-value">--</div></div>
+ </div>
+
+ <!-- Multi-WC Gantt Chart -->
+ <div class="chart-card"><h3>Gantt Chart — Work Orders on Work Centers</h3>
+  <div style="height:500px;overflow-y:auto"><canvas id="schedGantt"></canvas></div>
+ </div>
+
+ <!-- Schedule Table -->
+ <div class="chart-card" style="margin-top:12px"><h3>Schedule Detail (<span id="schedCount">0</span> entries) — <span style="font-size:11px;color:var(--text-muted)">Drag rows to reorder within a work center</span></h3>
+  <div style="max-height:400px;overflow-y:auto">
+   <table class="data-table" id="schedDetailTable">
+    <thead><tr><th></th><th>WC</th><th>WO ID</th><th>Product</th><th>Family</th><th>Qty (KFT)</th><th>Setup</th><th>Process</th><th>Start</th><th>End</th><th>Due Date</th><th>Priority</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+</div>
+
+<!-- ═══ SOLVER TAB ═══ -->
+<div class="tab-content" id="tab-solver">
+ <div class="control-panel"><div class="control-row">
+  <div class="control-group"><label>Solver</label>
+   <select id="solverSelect">
+    <option value="p1">P1 — Product Mix LP (max profit)</option>
+    <option value="p2">P2 — WO Acceptance IP</option>
+    <option value="p3" selected>P3 — Single Machine WSPT/EDD/Moore</option>
+    <option value="p4">P4 — Parallel Machines LPT</option>
+    <option value="p5">P5 — Flow Shop Johnson's Rule</option>
+    <option value="p5_neh">P5 — Flow Shop NEH Heuristic</option>
+    <option value="p6">P6 — Supply Chain LP</option>
+    <option value="p7">P7 — Metaheuristics SA/GA</option>
+    <option value="p8">P8 — Resource Allocation LP</option>
+    <option value="p9">P9 — Transportation LP</option>
+    <option value="p10">P10 — Campaign Batch TSP</option>
+    <option value="p11">P11 — Cut & Reel Bin-Packing</option>
+   </select>
+  </div>
+  <button class="btn btn-primary" onclick="runSolver()">Run Solver</button>
+  <span id="solveStatus" style="color:var(--text-muted);font-size:12px"></span>
+ </div></div>
+
+ <div class="kpi-grid">
+  <div class="kpi-card blue" id="kpi-obj"><div class="kpi-label">Objective</div><div class="kpi-value">--</div></div>
+  <div class="kpi-card blue" id="kpi-makespan"><div class="kpi-label">Makespan</div><div class="kpi-value">--</div><span class="kpi-unit">min</span></div>
+  <div class="kpi-card blue" id="kpi-tardy"><div class="kpi-label">Tardy Jobs</div><div class="kpi-value">--</div></div>
+  <div class="kpi-card blue" id="kpi-method"><div class="kpi-label">Method</div><div class="kpi-value">--</div></div>
+ </div>
+
+ <div class="chart-card"><h3>Solver Gantt Chart</h3><div class="chart-container" style="height:350px"><canvas id="solverGantt"></canvas></div></div>
+
+ <div class="chart-card" style="margin-top:12px"><h3>Solver Results</h3>
+  <div style="max-height:300px;overflow-y:auto">
+   <table class="data-table" id="solverTable">
+    <thead><tr><th>WO ID</th><th>Product</th><th>Start</th><th>End</th><th>Duration</th><th>Due</th><th>Tardiness</th><th>Status</th></tr></thead>
+    <tbody><tr><td colspan="8" style="color:var(--text-muted)">Select a solver and click Run</td></tr></tbody>
+   </table>
+  </div>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+// Family color map
+const familyColors = {A:'#3b82f6',B:'#ef4444',C:'#f59e0b',D:'#6366f1',I:'#14b8a6',M:'#f97316',R:'#8b5cf6',S:'#ec4899',U:'#22c55e'};
+let schedGantt = null, solverGantt = null;
+
+// ═══ CURRENT SCHEDULE ═══
+async function loadSchedule() {
+  const wc = document.getElementById('wcFilter').value;
+  const wo = document.getElementById('woFilter').value;
+  let qs = '?';
+  if (wc) qs += `wc_id=${wc}&`;
+  if (wo) qs += `wo_id=${wo}&`;
+
+  const data = await apiFetch('/api/scheduling/current' + qs);
+  const sched = data.schedule || [];
+
+  // Populate filter dropdowns (once)
+  const wcSel = document.getElementById('wcFilter');
+  if (wcSel.options.length <= 1 && data.work_centers) {
+    data.work_centers.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = w; wcSel.appendChild(o); });
+  }
+  const woSel = document.getElementById('woFilter');
+  if (woSel.options.length <= 1 && data.work_orders) {
+    data.work_orders.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = w; woSel.appendChild(o); });
+  }
+
+  // KPIs
+  const uniqueWCs = new Set(sched.map(s => s.wc_id));
+  const uniqueFams = new Set(sched.map(s => s.family));
+  const maxEnd = sched.length ? Math.max(...sched.map(s => s.end_min)) : 0;
+  document.querySelector('#kpi-total .kpi-value').textContent = sched.length;
+  document.querySelector('#kpi-wcs .kpi-value').textContent = uniqueWCs.size;
+  document.querySelector('#kpi-makespan2 .kpi-value').textContent = fmt(maxEnd);
+  document.querySelector('#kpi-families .kpi-value').textContent = uniqueFams.size;
+  document.getElementById('schedCount').textContent = sched.length;
+
+  // Multi-WC Gantt Chart
+  renderScheduleGantt(sched);
+
+  // Detail table with drag-and-drop
+  const tbody = document.querySelector('#schedDetailTable tbody');
+  tbody.innerHTML = sched.map((s, i) => {
+    const fColor = familyColors[s.family] || '#64748b';
+    return `<tr draggable="true" data-wo="${s.wo_id}" data-wc="${s.wc_id}" data-seq="${s.sequence||i}"
+               ondragstart="dragStart(event)" ondragover="event.preventDefault()" ondrop="dropRow(event)"
+               style="cursor:grab">
+      <td style="cursor:grab;color:var(--text-muted)">☰</td>
+      <td><strong>${s.wc_id}</strong></td>
+      <td>${s.wo_id}</td>
+      <td>${s.product_id}</td>
+      <td><span style="color:${fColor};font-weight:700">${s.family}</span></td>
+      <td class="number">${fmt(s.qty_kft, 1)}</td>
+      <td class="number">${fmt(s.setup_min)}</td>
+      <td class="number">${fmt(s.proc_min)}</td>
+      <td class="number">${fmt(s.start_min)}</td>
+      <td class="number">${fmt(s.end_min)}</td>
+      <td>${s.due_date || '-'}</td>
+      <td class="number">${s.priority}</td>
+    </tr>`;
+  }).join('');
+
+  updateTimestamp();
+}
+
+function renderScheduleGantt(sched) {
+  if (schedGantt) schedGantt.destroy();
+  if (!sched.length) return;
+
+  // Group by WC — each WC is a row, each WO is a colored bar
+  const wcOrder = [...new Set(sched.map(s => s.wc_id))].sort();
+  const datasets = [];
+
+  // Create one dataset per WO so each bar can have its own color
+  const woGroups = {};
+  sched.forEach(s => {
+    if (!woGroups[s.wo_id]) woGroups[s.wo_id] = [];
+    woGroups[s.wo_id].push(s);
+  });
+
+  Object.entries(woGroups).forEach(([woId, items]) => {
+    const color = familyColors[items[0].family] || '#64748b';
+    const data = wcOrder.map(wc => {
+      const item = items.find(i => i.wc_id === wc);
+      return item ? [item.start_min, item.end_min] : null;
+    });
+    datasets.push({
+      label: `${woId} (${items[0].product_id})`,
+      data: data,
+      backgroundColor: color + 'CC',
+      borderColor: color,
+      borderWidth: 1,
+      borderSkipped: false,
+      barPercentage: 0.8,
+    });
+  });
+
+  const canvas = document.getElementById('schedGantt');
+  canvas.height = Math.max(300, wcOrder.length * 35);
+
+  schedGantt = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: wcOrder, datasets: datasets },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: 'Time (minutes from shift start)' }, position: 'top', stacked: false },
+        y: { stacked: false, title: { display: false } }
+      },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const ds = ctx.dataset;
+              const val = ctx.raw;
+              if (!val) return '';
+              return `${ds.label}: ${val[0]} → ${val[1]} min (${val[1]-val[0]} min)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ═══ SOLVER TAB ═══
+let pendingSolverData = null;
+
+async function runSolver() {
+  const solver = document.getElementById('solverSelect').value;
+  const status = document.getElementById('solveStatus');
+  status.textContent = 'Solving...';
+
+  try {
+    const data = await apiPost('/api/scheduling/solve', {solver});
+    status.textContent = 'Done!';
+    showToast(`Solver ${solver.toUpperCase()} completed`, 'success');
+
+    let schedule = [], metrics = {}, method = solver.toUpperCase();
+    if (data.result && Array.isArray(data.result)) {
+      // P1 returns [status, profit, quantities, shadows] (length 4)
+      // P3 returns [method, metrics, schedule] (length 3)
+      // Check if it's P1 format (element [1] is a number, not an object)
+      if (data.result.length === 4 && typeof data.result[1] === 'number') {
+        method = 'LP Optimal (' + (data.result[0] || '') + ')';
+        metrics = {objective: data.result[1]};
+        const q = data.result[2] || {};
+        schedule = Object.entries(q).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([pid,qty])=>({
+          wo_id: pid, product_id: pid, start: 0, end: qty, proc_time: qty, due: 0, tardiness: 0
+        }));
+      } else if (data.result.length >= 3 && typeof data.result[1] === 'object') {
+        method = data.result[0] || method;
+        metrics = data.result[1] || {};
+        schedule = data.result[2] || [];
+      } else if (data.result.length >= 2) {
+        method = String(data.result[0] || method);
+        metrics = typeof data.result[1] === 'object' ? data.result[1] : {objective: data.result[1]};
+        if (data.result.length >= 3) schedule = data.result[2] || [];
+      }
+    }
+
+    document.querySelector('#kpi-obj .kpi-value').textContent =
+      metrics.objective != null ? fmt(metrics.objective, 1) :
+      metrics.profit != null ? fmt(metrics.profit, 1) : '--';
+    document.querySelector('#kpi-makespan .kpi-value').textContent = metrics.makespan != null ? fmt(metrics.makespan, 1) : '--';
+    document.querySelector('#kpi-tardy .kpi-value').textContent = metrics.tardy_jobs != null ? metrics.tardy_jobs : '--';
+    document.querySelector('#kpi-method .kpi-value').textContent = method;
+
+    // Store data for rendering (canvas may be hidden in tab)
+    pendingSolverData = { schedule, method };
+
+    // Try rendering now — if tab is visible it works
+    renderSolverGantt(schedule, method);
+
+    // Table (always works regardless of tab visibility)
+    const tbody = document.querySelector('#solverTable tbody');
+    if (schedule.length) {
+      tbody.innerHTML = schedule.slice(0, 40).map(s => {
+        const tardy = (s.tardiness||0) > 0;
+        return `<tr>
+          <td><strong>${s.wo_id||'-'}</strong></td>
+          <td>${s.product_id||'-'}</td>
+          <td class="number">${fmt(s.start,1)}</td>
+          <td class="number">${fmt(s.end,1)}</td>
+          <td class="number">${fmt(s.proc_time||(s.end-s.start),1)}</td>
+          <td class="number">${fmt(s.due||0,1)}</td>
+          <td class="number">${fmt(s.tardiness||0,1)}</td>
+          <td><span class="badge badge-${tardy?'red':'green'}">${tardy?'TARDY':'OK'}</span></td>
+        </tr>`;
+      }).join('') + (schedule.length > 40 ? `<tr><td colspan="8" style="color:var(--text-muted)">...and ${schedule.length-40} more</td></tr>` : '');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted)">No schedule data (LP solvers return quantities, not schedules)</td></tr>';
+    }
+
+  } catch(err) {
+    status.textContent = 'Error: ' + err.message;
+    showToast('Solver failed: ' + err.message, 'error');
+  }
+}
+
+function renderSolverGantt(schedule, method) {
+  if (solverGantt) solverGantt.destroy();
+  solverGantt = null;
+  if (!schedule || !schedule.length) return;
+  if (schedule[0].start === undefined && schedule[0].start === null) return;
+
+  const canvas = document.getElementById('solverGantt');
+  if (!canvas) return;
+
+  // Check if canvas is visible (tab must be active)
+  if (canvas.offsetWidth === 0 || canvas.offsetHeight === 0) {
+    // Canvas is hidden — will re-render when tab becomes visible
+    return;
+  }
+
+  const labels = schedule.slice(0, 30).map(s => s.wo_id || s.product_id || 'Job');
+  const colors = schedule.slice(0, 30).map(s => (s.tardiness||0) > 0 ? '#ef4444' : '#3b82f6');
+
+  solverGantt = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: method || 'Schedule',
+        data: schedule.slice(0, 30).map(s => [s.start, s.end]),
+        backgroundColor: colors,
+        borderWidth: 0, barPercentage: 0.7,
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      scales: { x: { title: { display: true, text: 'Time (minutes)' }, position: 'top' } },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+// Drag-and-drop reorder
+let draggedRow = null;
+function dragStart(e) {
+  draggedRow = e.target.closest('tr');
+  e.dataTransfer.effectAllowed = 'move';
+}
+async function dropRow(e) {
+  e.preventDefault();
+  const targetRow = e.target.closest('tr');
+  if (!draggedRow || !targetRow || draggedRow === targetRow) return;
+  const dragWo = draggedRow.dataset.wo;
+  const dragWc = draggedRow.dataset.wc;
+  const targetSeq = parseInt(targetRow.dataset.seq) || 0;
+  try {
+    await apiPost('/api/scheduling/reorder', { wo_id: dragWo, wc_id: dragWc, new_sequence: targetSeq });
+    showToast(`Reordered ${dragWo} to position ${targetSeq}`, 'success');
+    loadSchedule();
+  } catch(err) { showToast('Reorder failed', 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadSchedule();
+
+  // Re-render solver Gantt when tab becomes visible (Chart.js needs visible canvas)
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.tab === 'tab-solver' && pendingSolverData) {
+        setTimeout(() => {
+          renderSolverGantt(pendingSolverData.schedule, pendingSolverData.method);
+        }, 100);  // Small delay for CSS to apply display:block
+      }
+    });
+  });
+});
+</script>{% endblock %}

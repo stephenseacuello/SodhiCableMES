@@ -1,0 +1,721 @@
+{% extends "base.html" %}
+{% set active_page = "performance" %}
+{% block title %}F11 Performance — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F11 — Performance Analysis</h1>
+<p class="page-subtitle">OEE drill-down, quality metrics, scrap analysis, and on-time delivery</p>
+
+<!-- Top-Level KPI Cards (always visible) -->
+<div class="kpi-grid" id="topKpiGrid" aria-live="polite">
+  <div class="kpi-card" id="topKpi-oee"><div class="kpi-label">Plant OEE</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 85%</div></div>
+  <div class="kpi-card" id="topKpi-fpy"><div class="kpi-label">FPY</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 95%</div></div>
+  <div class="kpi-card" id="topKpi-adherence"><div class="kpi-label">Schedule Adherence</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 95%</div></div>
+  <div class="kpi-card" id="topKpi-scrap"><div class="kpi-label">Scrap Rate</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: &lt;2%</div></div>
+  <div class="kpi-card" id="topKpi-labor"><div class="kpi-label">Labor Efficiency</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 90%</div></div>
+  <div class="kpi-card" id="topKpi-doc"><div class="kpi-label">Doc Currency</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 100%</div></div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar" data-group="performance">
+  <button class="tab-btn active" data-tab="tab-oee">OEE Drill-Down</button>
+  <button class="tab-btn" data-tab="tab-quality">Quality</button>
+  <button class="tab-btn" data-tab="tab-scrap">Scrap Analysis</button>
+  <button class="tab-btn" data-tab="tab-otd">On-Time Delivery</button>
+</div>
+
+<!-- ===== TAB 1: OEE Drill-Down ===== -->
+<div class="tab-content active" id="tab-oee">
+
+  <div class="control-panel"><div class="control-row">
+    <div class="control-group"><label for="wcFilter">Work Center</label>
+      <select id="wcFilter" onchange="loadOEE()"><option value="">All Work Centers (Plant)</option></select>
+    </div>
+    <div class="control-group"><label for="dateFrom">Date From</label>
+      <input type="date" id="dateFrom" onchange="loadOEE()">
+    </div>
+    <div class="control-group"><label for="dateTo">Date To</label>
+      <input type="date" id="dateTo" onchange="loadOEE()">
+    </div>
+    <div class="control-group"><label for="shiftFilter">Shift</label>
+      <select id="shiftFilter" onchange="loadOEE()"><option value="">All Shifts</option><option>Day</option><option>Swing</option><option>Night</option></select>
+    </div>
+    <div class="control-group"><label for="familyFilter">Product Family</label>
+      <select id="familyFilter" onchange="loadOEE()"><option value="">All Families</option></select>
+    </div>
+    <button class="btn btn-primary" onclick="resetFilters()">Reset</button>
+    <a id="exportLink" href="/api/oee/export" class="btn-export" title="Export filtered data to CSV">Export CSV</a>
+  </div></div>
+
+  <!-- OEE KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card blue" id="kpi-oee-main"><div class="kpi-label">Overall OEE</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 85% (World Class)</div></div>
+    <div class="kpi-card blue" id="kpi-avail"><div class="kpi-label">Availability (A)</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Planned - Downtime</div></div>
+    <div class="kpi-card blue" id="kpi-perf"><div class="kpi-label">Performance (P)</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Actual / Rated Output</div></div>
+    <div class="kpi-card blue" id="kpi-qual"><div class="kpi-label">Quality (Q)</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Good / Total</div></div>
+    <div class="kpi-card blue" id="kpi-output"><div class="kpi-label">Total Output</div><div class="kpi-value">--</div><span class="kpi-unit">ft</span><div class="kpi-target">All filtered shifts</div></div>
+    <div class="kpi-card blue" id="kpi-reports"><div class="kpi-label">Shift Reports</div><div class="kpi-value">--</div><span class="kpi-unit">shifts</span><div class="kpi-target">Filtered count</div></div>
+  </div>
+
+  <div class="chart-grid">
+    <!-- OEE Waterfall -->
+    <div class="chart-card"><h3>OEE Waterfall — A x P x Q Breakdown</h3><div class="chart-container"><canvas id="waterfallChart" role="img" aria-label="OEE waterfall chart showing availability, performance, and quality losses"></canvas></div></div>
+    <!-- 6 Big Losses -->
+    <div class="chart-card"><h3>6 Big Losses (Downtime Pareto)</h3><div class="chart-container"><canvas id="lossesChart" role="img" aria-label="Six big losses downtime Pareto chart"></canvas></div></div>
+    <!-- OEE Trend -->
+    <div class="chart-card" style="grid-column: span 2"><h3>OEE Trend Over Time (Daily Average)</h3><div class="chart-container"><canvas id="trendChart" role="img" aria-label="OEE trend over time daily average line chart"></canvas></div></div>
+    <!-- OEE by Work Center comparison -->
+    <div class="chart-card" style="grid-column: span 2"><h3>OEE Comparison by Work Center</h3><div class="chart-container"><canvas id="wcCompareChart" role="img" aria-label="OEE comparison by work center grouped bar chart"></canvas></div></div>
+  </div>
+
+  <!-- Shift Reports Table -->
+  <div class="chart-card">
+    <h3>Shift Reports Detail (<span id="reportCount">0</span> records)</h3>
+    <div style="max-height:400px;overflow-y:auto">
+      <table class="data-table" id="reportTable">
+        <caption class="sr-only">Shift reports detail</caption>
+        <thead><tr><th scope="col">Date</th><th scope="col">Shift</th><th scope="col">Work Center</th><th scope="col">A %</th><th scope="col">P %</th><th scope="col">Q %</th><th scope="col">OEE %</th><th scope="col">Output (ft)</th><th scope="col">Scrap (ft)</th><th scope="col">Downtime (min)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB 2: Quality ===== -->
+<div class="tab-content" id="tab-quality">
+  <div class="kpi-grid">
+    <div class="kpi-card" id="qKpi-fpy"><div class="kpi-label">First Pass Yield</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 95%</div></div>
+    <div class="kpi-card" id="qKpi-ncr"><div class="kpi-label">Open NCRs</div><div class="kpi-value">--</div><span class="kpi-unit">count</span><div class="kpi-target">Active nonconformances</div></div>
+    <div class="kpi-card" id="qKpi-cpk"><div class="kpi-label">Avg Cpk</div><div class="kpi-value">--</div><span class="kpi-unit"></span><div class="kpi-target">Target: &ge;1.33</div></div>
+    <div class="kpi-card" id="qKpi-spark"><div class="kpi-label">Spark Pass Rate</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Dielectric test</div></div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-card" style="grid-column: span 2"><h3>Cpk by Work Center</h3><div class="chart-container"><canvas id="cpkChart" role="img" aria-label="Process capability Cpk by work center bar chart"></canvas></div></div>
+  </div>
+  <div class="chart-card">
+    <h3>NCR Log</h3>
+    <div style="max-height:400px;overflow-y:auto">
+      <table class="data-table" id="ncrTable">
+        <caption class="sr-only">Non-conformance report log</caption>
+        <thead><tr><th scope="col">NCR ID</th><th scope="col">Product</th><th scope="col">Severity</th><th scope="col">Status</th><th scope="col">Reported Date</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB 3: Scrap Analysis ===== -->
+<div class="tab-content" id="tab-scrap">
+  <div class="kpi-grid">
+    <div class="kpi-card" id="sKpi-total"><div class="kpi-label">Total Scrap</div><div class="kpi-value">--</div><span class="kpi-unit">ft</span><div class="kpi-target">Period total</div></div>
+    <div class="kpi-card" id="sKpi-cost"><div class="kpi-label">Scrap Cost</div><div class="kpi-value">--</div><span class="kpi-unit">$</span><div class="kpi-target">Estimated loss</div></div>
+    <div class="kpi-card" id="sKpi-rate"><div class="kpi-label">Scrap Rate</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: &lt;2%</div></div>
+    <div class="kpi-card" id="sKpi-cause"><div class="kpi-label">Top Cause</div><div class="kpi-value">--</div><span class="kpi-unit"></span><div class="kpi-target">Most frequent</div></div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-card"><h3>Scrap Pareto by Cause</h3><div class="chart-container"><canvas id="scrapParetoChart" role="img" aria-label="Scrap Pareto by cause bar chart"></canvas></div></div>
+    <div class="chart-card"><h3>Scrap by Work Center</h3><div class="chart-container"><canvas id="scrapByWcChart" role="img" aria-label="Scrap footage by work center bar chart"></canvas></div></div>
+    <div class="chart-card" style="grid-column: span 2"><h3>Scrap Trend by Day</h3><div class="chart-container"><canvas id="scrapTrendChart" role="img" aria-label="Daily scrap trend line chart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ===== TAB 4: On-Time Delivery ===== -->
+<div class="tab-content" id="tab-otd">
+  <div class="kpi-grid">
+    <div class="kpi-card" id="dKpi-ontime"><div class="kpi-label">On-Time %</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 95%</div></div>
+    <div class="kpi-card" id="dKpi-late"><div class="kpi-label">Late WOs</div><div class="kpi-value">--</div><span class="kpi-unit">count</span><div class="kpi-target">Currently overdue</div></div>
+    <div class="kpi-card" id="dKpi-early"><div class="kpi-label">Avg Days Early</div><div class="kpi-value">--</div><span class="kpi-unit">days</span><div class="kpi-target">Positive = early</div></div>
+    <div class="kpi-card" id="dKpi-complete"><div class="kpi-label">Total Complete</div><div class="kpi-value">--</div><span class="kpi-unit">WOs</span><div class="kpi-target">Finished work orders</div></div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-card"><h3>On-Time by Family</h3><div class="chart-container"><canvas id="otdFamilyChart" role="img" aria-label="On-time delivery percentage by product family"></canvas></div></div>
+    <div class="chart-card"><h3>Delivery Status</h3><div class="chart-container"><canvas id="otdDonutChart" role="img" aria-label="Delivery status distribution donut chart"></canvas></div></div>
+  </div>
+  <div class="chart-card">
+    <h3>WO Delivery Detail</h3>
+    <div style="max-height:400px;overflow-y:auto">
+      <table class="data-table" id="otdTable">
+        <caption class="sr-only">Work order delivery detail</caption>
+        <thead><tr><th scope="col">WO ID</th><th scope="col">Product</th><th scope="col">Family</th><th scope="col">Due Date</th><th scope="col">Actual End</th><th scope="col">Days Early/Late</th><th scope="col">Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+/* ===================================================================
+   F11 PERFORMANCE — SodhiCable MES
+   Tab 1: OEE Drill-Down (full implementation from oee.html)
+   Tab 2: Quality (lazy-load)
+   Tab 3: Scrap Analysis (lazy-load)
+   Tab 4: On-Time Delivery (lazy-load)
+   =================================================================== */
+
+// ---- Chart instance references (Tab 1 — OEE) ----
+let waterfallChart, lossesChart, trendChart, wcCompareChart;
+
+// ---- Lazy-load flags for Tabs 2-4 ----
+let qualityLoaded = false;
+let scrapLoaded = false;
+let otdLoaded = false;
+
+// ===================================================================
+// TOP-LEVEL KPIs (always visible)
+// ===================================================================
+async function loadTopKPIs() {
+  try {
+    const data = await apiFetch('/api/performance/kpis');
+    const rows = Array.isArray(data) ? data : (data.kpis || []);
+
+    const find = (name) => rows.find(r => (r.kpi || r.kpi_name || r.name || '').toLowerCase().includes(name.toLowerCase()));
+
+    const targets = {
+      oee: { el: 'topKpi-oee', target: 85, invert: false },
+      fpy: { el: 'topKpi-fpy', target: 95, invert: false },
+      adherence: { el: 'topKpi-adherence', target: 95, invert: false },
+      scrap: { el: 'topKpi-scrap', target: 2, invert: true },
+      labor: { el: 'topKpi-labor', target: 90, invert: false },
+      doc: { el: 'topKpi-doc', target: 100, invert: false }
+    };
+
+    const oee = find('oee');
+    const fpy = find('fpy') || find('first pass');
+    const adherence = find('adherence') || find('schedule');
+    const scrap = find('scrap');
+    const labor = find('labor');
+    const doc = find('doc') || find('currency');
+
+    function applyKPI(row, key) {
+      if (!row || row.value == null) return;
+      const t = targets[key];
+      const val = Number(row.value);
+      const pass = t.invert ? (val <= t.target) : (val >= t.target);
+      const color = pass ? 'green' : 'red';
+      setKPIAnimated(t.el, val.toFixed(1), '%', color);
+    }
+
+    applyKPI(oee, 'oee');
+    applyKPI(fpy, 'fpy');
+    applyKPI(adherence, 'adherence');
+    applyKPI(scrap, 'scrap');
+    applyKPI(labor, 'labor');
+    applyKPI(doc, 'doc');
+  } catch(e) { console.error('Top KPIs error:', e); }
+}
+
+// ===================================================================
+// TAB 1: OEE DRILL-DOWN (full implementation)
+// ===================================================================
+async function initFilters() {
+  try {
+    // Load work centers
+    const wcs = await apiFetch('/api/oee/work_centers');
+    const wcSel = document.getElementById('wcFilter');
+    wcs.forEach(wc => {
+      const o = document.createElement('option');
+      o.value = wc.wc_id;
+      o.textContent = `${wc.wc_id} — ${wc.name}`;
+      wcSel.appendChild(o);
+    });
+
+    // Load product families
+    const families = await apiFetch('/api/oee/families');
+    const famSel = document.getElementById('familyFilter');
+    const famNames = {A:'Shielded Instr',B:'Armored Control',C:'DHT',D:'Down Hole',I:'Insulated',M:'Medium Voltage',R:'Utility/Wire',S:'Shipboard',U:'Fire-Rated'};
+    families.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f;
+      o.textContent = `${f} — ${famNames[f] || f}`;
+      famSel.appendChild(o);
+    });
+
+    // Set date range
+    const range = await apiFetch('/api/oee/date_range');
+    if (range.min_date) document.getElementById('dateFrom').value = range.min_date;
+    if (range.max_date) document.getElementById('dateTo').value = range.max_date;
+  } catch(e) { console.error('Filter init error:', e); }
+
+  loadOEE();
+}
+
+function getFilterQS() {
+  const wc = document.getElementById('wcFilter').value;
+  const shift = document.getElementById('shiftFilter').value;
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  const family = document.getElementById('familyFilter').value;
+  let qs = '?';
+  if (wc) qs += `wc_id=${wc}&`;
+  if (shift) qs += `shift=${shift}&`;
+  if (from) qs += `date_from=${from}&`;
+  if (to) qs += `date_to=${to}&`;
+  if (family) qs += `family=${family}&`;
+  // Update export link with current filters
+  const el = document.getElementById('exportLink');
+  if (el) el.href = '/api/oee/export' + qs;
+  return qs;
+}
+
+function resetFilters() {
+  document.getElementById('wcFilter').value = '';
+  document.getElementById('shiftFilter').value = '';
+  document.getElementById('familyFilter').value = '';
+  // Keep date range as-is
+  loadOEE();
+}
+
+async function loadOEE() {
+  const qs = getFilterQS();
+
+  // Summary KPIs
+  const s = await apiFetch('/api/oee/summary' + qs);
+  setVal('kpi-oee-main', s.oee, s.oee >= 85 ? 'green' : s.oee >= 60 ? 'yellow' : 'red');
+  setVal('kpi-avail', s.availability, s.availability >= 90 ? 'green' : s.availability >= 80 ? 'yellow' : 'red');
+  setVal('kpi-perf', s.performance, s.performance >= 90 ? 'green' : s.performance >= 80 ? 'yellow' : 'red');
+  setVal('kpi-qual', s.quality, s.quality >= 97 ? 'green' : s.quality >= 95 ? 'yellow' : 'red');
+  setVal('kpi-output', fmt(s.total_output_ft), 'blue');
+  setVal('kpi-reports', s.count, 'blue');
+  document.getElementById('reportCount').textContent = s.count;
+
+  // Waterfall chart
+  if (waterfallChart) waterfallChart.destroy();
+  const availLoss = -(100 - s.availability);
+  const perfLoss = -(s.availability/100) * (100 - s.performance);
+  const qualLoss = -(s.availability * s.performance / 10000) * (100 - s.quality);
+  waterfallChart = new Chart(document.getElementById('waterfallChart'), {
+    type: 'bar', data: {
+      labels: ['Planned Time', 'Availability Loss', 'Performance Loss', 'Quality Loss', 'OEE'],
+      datasets: [{
+        data: [100, availLoss, perfLoss, qualLoss, s.oee],
+        backgroundColor: ['#3b82f6', '#ef4444', '#f59e0b', '#eab308', s.oee >= 85 ? '#22c55e' : s.oee >= 60 ? '#f59e0b' : '#ef4444']
+      }]
+    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { title: { display: true, text: '%' }, suggestedMin: -30, suggestedMax: 110 } } }
+  });
+
+  // 6 Big Losses
+  const losses = await apiFetch('/api/oee/losses' + qs);
+  if (lossesChart) lossesChart.destroy();
+  const lossColors = {Breakdown:'#ef4444',Setup:'#f59e0b',MaterialWait:'#eab308',QualityHold:'#8b5cf6',PM:'#3b82f6',NoOrders:'#64748b',Other:'#475569'};
+  if (losses.length) {
+    lossesChart = new Chart(document.getElementById('lossesChart'), {
+      type: 'bar', data: {
+        labels: losses.map(l => l.category),
+        datasets: [{ label: 'Minutes', data: losses.map(l => l.total_min),
+          backgroundColor: losses.map(l => lossColors[l.category] || '#64748b') }]
+      }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { title: { display: true, text: 'Total Minutes' } } } }
+    });
+  }
+
+  // OEE Trend
+  const trend = await apiFetch('/api/oee/trend' + qs);
+  if (trendChart) trendChart.destroy();
+  if (trend.length) {
+    trendChart = new Chart(document.getElementById('trendChart'), {
+      type: 'line', data: {
+        labels: trend.map(t => t.shift_date),
+        datasets: [
+          { label: 'OEE %', data: trend.map(t => (t.avg_oee * 100).toFixed(1)), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3 },
+          { label: 'Availability', data: trend.map(t => (t.avg_a * 100).toFixed(1)), borderColor: '#22c55e', borderDash: [3,3], tension: 0.3, pointRadius: 0 },
+          { label: 'Performance', data: trend.map(t => (t.avg_p * 100).toFixed(1)), borderColor: '#f59e0b', borderDash: [3,3], tension: 0.3, pointRadius: 0 },
+          { label: 'Quality', data: trend.map(t => (t.avg_q * 100).toFixed(1)), borderColor: '#8b5cf6', borderDash: [3,3], tension: 0.3, pointRadius: 0 },
+        ]
+      }, options: { responsive: true, maintainAspectRatio: false,
+        scales: { y: { min: 50, max: 100, title: { display: true, text: '%' } } },
+        plugins: { annotation: { annotations: { target: { type: 'line', yMin: 85, yMax: 85, borderColor: '#22c55e', borderDash: [5,5], borderWidth: 2,
+          label: { display: true, content: 'World Class 85%', position: 'start', backgroundColor: 'rgba(34,197,94,0.8)' } } } } } }
+    });
+  }
+
+  // WC Comparison
+  const wcData = await apiFetch('/api/oee/by_wc' + qs);
+  if (wcCompareChart) wcCompareChart.destroy();
+  if (wcData.length) {
+    wcCompareChart = new Chart(document.getElementById('wcCompareChart'), {
+      type: 'bar', data: {
+        labels: wcData.map(w => w.wc_id),
+        datasets: [
+          { label: 'Availability', data: wcData.map(w => (w.avg_a * 100).toFixed(1)), backgroundColor: '#3b82f6' },
+          { label: 'Performance', data: wcData.map(w => (w.avg_p * 100).toFixed(1)), backgroundColor: '#f59e0b' },
+          { label: 'Quality', data: wcData.map(w => (w.avg_q * 100).toFixed(1)), backgroundColor: '#22c55e' },
+        ]
+      }, options: { responsive: true, maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } } },
+        plugins: { annotation: { annotations: { target: { type: 'line', yMin: 85, yMax: 85, borderColor: '#ef4444', borderDash: [5,5], borderWidth: 1 } } } } }
+    });
+  }
+
+  // Shift Reports Table
+  const tbody = document.querySelector('#reportTable tbody');
+  tbody.innerHTML = (s.reports || []).map(r => {
+    const oeeColor = r.oee_overall >= 0.85 ? 'badge-green' : r.oee_overall >= 0.60 ? 'badge-yellow' : 'badge-red';
+    return `<tr>
+      <td>${r.shift_date}</td><td>${r.shift_code}</td><td>${r.wc_id}</td>
+      <td class="number">${(r.oee_availability*100).toFixed(1)}</td>
+      <td class="number">${(r.oee_performance*100).toFixed(1)}</td>
+      <td class="number">${(r.oee_quality*100).toFixed(1)}</td>
+      <td class="number"><span class="badge ${oeeColor}">${(r.oee_overall*100).toFixed(1)}%</span></td>
+      <td class="number">${fmt(r.total_output_ft)}</td>
+      <td class="number">${fmt(r.total_scrap_ft)}</td>
+      <td class="number">${r.total_downtime_min}</td>
+    </tr>`;
+  }).join('');
+
+  updateTimestamp();
+}
+
+function setVal(id, value, color) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  card.querySelector('.kpi-value').textContent = value;
+  card.className = 'kpi-card ' + color;
+}
+
+// ===================================================================
+// TAB 2: QUALITY (lazy-load)
+// ===================================================================
+let cpkChart;
+
+async function loadQuality() {
+  if (qualityLoaded) return;
+  qualityLoaded = true;
+
+  try {
+    // FPY from top KPIs already loaded — mirror it
+    const kpis = await apiFetch('/api/performance/kpis');
+    const rows = Array.isArray(kpis) ? kpis : (kpis.kpis || []);
+    const fpyRow = rows.find(r => (r.kpi || r.kpi_name || r.name || '').toLowerCase().includes('fpy') ||
+                                   (r.kpi || r.kpi_name || r.name || '').toLowerCase().includes('first pass'));
+    if (fpyRow && fpyRow.value != null) {
+      const val = Number(fpyRow.value);
+      setKPIAnimated('qKpi-fpy', val.toFixed(1), '%', val >= 95 ? 'green' : 'red');
+    }
+
+    // Cpk data
+    const cpkData = await apiFetch('/api/quality/cpk');
+    const cpkRows = Array.isArray(cpkData) ? cpkData : (cpkData.cpk || cpkData.data || []);
+    if (cpkRows.length) {
+      const avgCpk = cpkRows.reduce((s, r) => s + (r.cpk || r.avg_cpk || 0), 0) / cpkRows.length;
+      setKPIAnimated('qKpi-cpk', avgCpk.toFixed(2), '', avgCpk >= 1.33 ? 'green' : avgCpk >= 1.0 ? 'yellow' : 'red');
+
+      // Cpk by WC chart
+      setTimeout(() => {
+        const colors = cpkRows.map(r => {
+          const v = r.cpk || r.avg_cpk || 0;
+          return v >= 1.33 ? '#22c55e' : v >= 1.0 ? '#f59e0b' : '#ef4444';
+        });
+        cpkChart = new Chart(document.getElementById('cpkChart'), {
+          type: 'bar', data: {
+            labels: cpkRows.map(r => r.wc_id || r.work_center || r.wc || ''),
+            datasets: [{ label: 'Cpk', data: cpkRows.map(r => r.cpk || r.avg_cpk || 0), backgroundColor: colors }]
+          }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false },
+              annotation: { annotations: {
+                capable: { type: 'line', xMin: 1.33, xMax: 1.33, borderColor: '#22c55e', borderDash: [5,5], borderWidth: 2,
+                  label: { display: true, content: 'Capable (1.33)', position: 'start', backgroundColor: 'rgba(34,197,94,0.8)' } },
+                marginal: { type: 'line', xMin: 1.0, xMax: 1.0, borderColor: '#f59e0b', borderDash: [3,3], borderWidth: 1,
+                  label: { display: true, content: 'Marginal (1.0)', position: 'start', backgroundColor: 'rgba(245,158,11,0.8)' } }
+              } }
+            },
+            scales: { x: { title: { display: true, text: 'Cpk' }, min: 0 } } }
+        });
+      }, 100);
+    }
+
+    // Spark summary
+    const spark = await apiFetch('/api/quality/spark_summary');
+    const sparkData = Array.isArray(spark) ? spark : (spark.summary || spark);
+    if (sparkData && sparkData.pass_rate != null) {
+      const pr = Number(sparkData.pass_rate);
+      setKPIAnimated('qKpi-spark', pr.toFixed(1), '%', pr >= 99 ? 'green' : pr >= 95 ? 'yellow' : 'red');
+    } else if (Array.isArray(sparkData) && sparkData.length) {
+      const total = sparkData.reduce((s, r) => s + (r.total || 0), 0);
+      const passed = sparkData.reduce((s, r) => s + (r.passed || 0), 0);
+      const pr = total > 0 ? (passed / total * 100) : 0;
+      setKPIAnimated('qKpi-spark', pr.toFixed(1), '%', pr >= 99 ? 'green' : pr >= 95 ? 'yellow' : 'red');
+    }
+
+    // NCR data
+    const ncrData = await apiFetch('/api/quality/ncr');
+    const ncrRows = Array.isArray(ncrData) ? ncrData : (ncrData.ncrs || ncrData.data || []);
+    const openNCRs = ncrRows.filter(r => (r.status || '').toLowerCase() !== 'closed');
+    setKPIAnimated('qKpi-ncr', openNCRs.length, 'count', openNCRs.length <= 5 ? 'green' : openNCRs.length <= 15 ? 'yellow' : 'red');
+
+    // NCR table
+    const ncrTbody = document.querySelector('#ncrTable tbody');
+    ncrTbody.innerHTML = ncrRows.map(r => {
+      const sevColor = (r.severity || '').toLowerCase() === 'critical' ? 'badge-red' :
+                       (r.severity || '').toLowerCase() === 'major' ? 'badge-yellow' : 'badge-green';
+      return `<tr>
+        <td>${r.ncr_id || r.id || ''}</td>
+        <td>${r.product || r.product_id || ''}</td>
+        <td><span class="badge ${sevColor}">${r.severity || ''}</span></td>
+        <td>${r.status || ''}</td>
+        <td>${r.reported_date || r.date || ''}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="5">No NCR data available</td></tr>';
+
+  } catch(e) { console.error('Quality tab error:', e); }
+}
+
+// ===================================================================
+// TAB 3: SCRAP ANALYSIS (lazy-load)
+// ===================================================================
+let scrapParetoChart, scrapByWcChart, scrapTrendLineChart;
+
+async function loadScrap() {
+  if (scrapLoaded) return;
+  scrapLoaded = true;
+
+  try {
+    // Scrap Pareto
+    const paretoData = await apiFetch('/api/dashboard/scrap_pareto');
+    const paretoRows = Array.isArray(paretoData) ? paretoData : (paretoData.pareto || paretoData.data || []);
+
+    const totalScrap = paretoRows.reduce((s, r) => s + (r.total_ft || r.scrap_ft || 0), 0);
+    setKPIAnimated('sKpi-total', fmt(totalScrap), 'ft', 'blue');
+
+    // Estimate cost at ~$2.50/ft
+    const cost = totalScrap * 2.5;
+    setKPIAnimated('sKpi-cost', '$' + fmt(cost), '', cost > 5000 ? 'red' : 'yellow');
+
+    // Top cause
+    if (paretoRows.length) {
+      const topCause = paretoRows[0].cause_code || paretoRows[0].cause || '—';
+      const card = document.getElementById('sKpi-cause');
+      if (card) { card.querySelector('.kpi-value').textContent = topCause; card.className = 'kpi-card yellow'; }
+    }
+
+    // Scrap rate from top KPIs
+    const kpis = await apiFetch('/api/performance/kpis');
+    const kpiRows = Array.isArray(kpis) ? kpis : (kpis.kpis || []);
+    const scrapKpi = kpiRows.find(r => (r.kpi || r.kpi_name || r.name || '').toLowerCase().includes('scrap'));
+    if (scrapKpi && scrapKpi.value != null) {
+      const val = Number(scrapKpi.value);
+      setKPIAnimated('sKpi-rate', val.toFixed(2), '%', val <= 2 ? 'green' : 'red');
+    }
+
+    // Pareto chart
+    setTimeout(() => {
+      if (paretoRows.length) {
+        scrapParetoChart = new Chart(document.getElementById('scrapParetoChart'), {
+          type: 'bar', data: {
+            labels: paretoRows.map(r => r.cause_code || r.cause || ''),
+            datasets: [{ label: 'Scrap (ft)', data: paretoRows.map(r => r.total_ft || r.scrap_ft || 0),
+              backgroundColor: '#ef4444' }]
+          }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { title: { display: true, text: 'Footage (ft)' } } } }
+        });
+      }
+    }, 100);
+
+    // Scrap by WC
+    const wcScrapData = await apiFetch('/api/dashboard/scrap_by_wc');
+    const wcScrapRows = Array.isArray(wcScrapData) ? wcScrapData : (wcScrapData.data || wcScrapData.scrap_by_wc || []);
+    setTimeout(() => {
+      if (wcScrapRows.length) {
+        // Try to group by cause if data supports it; otherwise simple bar
+        const labels = wcScrapRows.map(r => r.wc_id || r.work_center || '');
+        const datasets = [];
+        if (wcScrapRows[0] && wcScrapRows[0].causes) {
+          // Stacked by cause
+          const allCauses = [...new Set(wcScrapRows.flatMap(r => Object.keys(r.causes)))];
+          const causeColors = ['#ef4444','#f59e0b','#eab308','#8b5cf6','#3b82f6','#64748b','#22c55e'];
+          allCauses.forEach((cause, i) => {
+            datasets.push({
+              label: cause,
+              data: wcScrapRows.map(r => (r.causes && r.causes[cause]) || 0),
+              backgroundColor: causeColors[i % causeColors.length]
+            });
+          });
+        } else {
+          datasets.push({ label: 'Scrap (ft)', data: wcScrapRows.map(r => r.total_ft || r.scrap_ft || 0), backgroundColor: '#ef4444' });
+        }
+        scrapByWcChart = new Chart(document.getElementById('scrapByWcChart'), {
+          type: 'bar', data: { labels, datasets },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: datasets.length > 1 } },
+            scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'Scrap (ft)' } } } }
+        });
+      }
+    }, 150);
+
+    // Scrap trend by day
+    const trendData = await apiFetch('/api/performance/scrap_trend');
+    const trendRows = Array.isArray(trendData) ? trendData : (trendData.trend || trendData.data || []);
+    setTimeout(() => {
+      if (trendRows.length) {
+        scrapTrendLineChart = new Chart(document.getElementById('scrapTrendChart'), {
+          type: 'line', data: {
+            labels: trendRows.map(r => r.date || r.shift_date || ''),
+            datasets: [{
+              label: 'Daily Scrap (ft)', data: trendRows.map(r => r.total_ft || r.scrap_ft || 0),
+              borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', fill: true, tension: 0.3
+            }]
+          }, options: { responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'Scrap (ft)' } } },
+            plugins: { annotation: { annotations: { target: { type: 'line', yMin: 100, yMax: 100,
+              borderColor: '#22c55e', borderDash: [5,5], borderWidth: 2,
+              label: { display: true, content: 'Daily Target', position: 'end', backgroundColor: 'rgba(34,197,94,0.8)' } } } } } }
+        });
+      }
+    }, 200);
+
+  } catch(e) { console.error('Scrap tab error:', e); }
+}
+
+// ===================================================================
+// TAB 4: ON-TIME DELIVERY (lazy-load)
+// ===================================================================
+let otdFamilyChart, otdDonutChart;
+
+async function loadOTD() {
+  if (otdLoaded) return;
+  otdLoaded = true;
+
+  try {
+    // Executive summary for OTD KPIs
+    const execData = await apiFetch('/api/executive/summary');
+    const exec = Array.isArray(execData) ? {} : execData;
+
+    const onTimePct = exec.on_time_pct || exec.on_time_delivery || exec.otd_pct || null;
+    const lateWOs = exec.late_wos || exec.late_count || 0;
+    const avgEarly = exec.avg_days_early || exec.avg_early || 0;
+    const totalComplete = exec.completed_wos || exec.total_complete || 0;
+
+    if (onTimePct != null) setKPIAnimated('dKpi-ontime', Number(onTimePct).toFixed(1), '%', onTimePct >= 95 ? 'green' : onTimePct >= 85 ? 'yellow' : 'red');
+    setKPIAnimated('dKpi-late', lateWOs, 'count', lateWOs <= 3 ? 'green' : lateWOs <= 10 ? 'yellow' : 'red');
+    setKPIAnimated('dKpi-early', Number(avgEarly).toFixed(1), 'days', avgEarly >= 0 ? 'green' : 'red');
+    setKPIAnimated('dKpi-complete', totalComplete, 'WOs', 'blue');
+
+    // Schedule detail for table and charts
+    const detailData = await apiFetch('/api/performance/schedule_detail');
+    const detailRows = Array.isArray(detailData) ? detailData : (detailData.detail || detailData.data || detailData.schedule || []);
+
+    // OTD by family chart
+    setTimeout(() => {
+      if (detailRows.length) {
+        const FAMILY_NAMES = {'A':'Instrumentation','B':'Armored Control','C':'DHT','D':'Down Hole Special','I':'Insulated Conductors','M':'Medium Voltage','R':'Utility/Building','S':'Shipboard/Fiber','U':'Fire-Rated'};
+        const familyMap = {};
+        detailRows.forEach(r => {
+          const fam = FAMILY_NAMES[r.family] || r.family || r.product_family || 'Other';
+          if (!familyMap[fam]) familyMap[fam] = { total: 0, onTime: 0 };
+          familyMap[fam].total++;
+          const daysEarly = r.days_early || r.days_early_late || 0;
+          const status = (r.status || '').toLowerCase();
+          if (status === 'on time' || status === 'on-time' || status === 'complete' || daysEarly >= 0) {
+            familyMap[fam].onTime++;
+          }
+        });
+        const families = Object.keys(familyMap);
+        const otdPcts = families.map(f => familyMap[f].total > 0 ? (familyMap[f].onTime / familyMap[f].total * 100) : 0);
+
+        otdFamilyChart = new Chart(document.getElementById('otdFamilyChart'), {
+          type: 'bar', data: {
+            labels: families,
+            datasets: [{ label: 'On-Time %', data: otdPcts,
+              backgroundColor: otdPcts.map(v => v >= 95 ? '#22c55e' : v >= 85 ? '#f59e0b' : '#ef4444') }]
+          }, options: { responsive: true, maintainAspectRatio: false,
+            scales: { y: { min: 0, max: 100, title: { display: true, text: 'On-Time %' } } },
+            plugins: { legend: { display: false },
+              annotation: { annotations: { target: { type: 'line', yMin: 95, yMax: 95, borderColor: '#22c55e', borderDash: [5,5], borderWidth: 2 } } } } }
+        });
+      }
+    }, 100);
+
+    // Delivery status donut
+    setTimeout(() => {
+      const statusCounts = { 'On Time': 0, 'Late': 0, 'Overdue': 0, 'In Progress': 0 };
+      detailRows.forEach(r => {
+        const s = (r.status || '').toLowerCase();
+        if (s.includes('on time') || s.includes('on-time')) statusCounts['On Time']++;
+        else if (s.includes('late')) statusCounts['Late']++;
+        else if (s.includes('overdue')) statusCounts['Overdue']++;
+        else if (s.includes('progress') || s.includes('active') || s.includes('open')) statusCounts['In Progress']++;
+        else {
+          // Infer from days_early_late
+          const d = r.days_early || r.days_early_late || 0;
+          if (r.actual_end || r.end_date) {
+            if (d >= 0) statusCounts['On Time']++;
+            else statusCounts['Late']++;
+          } else {
+            statusCounts['In Progress']++;
+          }
+        }
+      });
+      const donutLabels = Object.keys(statusCounts);
+      const donutData = Object.values(statusCounts);
+      const donutColors = ['#22c55e', '#ef4444', '#dc2626', '#3b82f6'];
+
+      otdDonutChart = new Chart(document.getElementById('otdDonutChart'), {
+        type: 'doughnut', data: {
+          labels: donutLabels, datasets: [{ data: donutData, backgroundColor: donutColors }]
+        }, options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'right' } } }
+      });
+    }, 150);
+
+    // Delivery detail table
+    const otdTbody = document.querySelector('#otdTable tbody');
+    otdTbody.innerHTML = detailRows.map(r => {
+      const days = r.days_early || r.days_early_late || 0;
+      const daysColor = days >= 0 ? '#22c55e' : '#ef4444';
+      const statusBadge = (r.status || '').toLowerCase().includes('late') ? 'badge-red' :
+                          (r.status || '').toLowerCase().includes('on time') ? 'badge-green' : 'badge-yellow';
+      return `<tr>
+        <td>${r.wo_id || r.work_order_id || ''}</td>
+        <td>${r.product || r.product_id || ''}</td>
+        <td>${r.family || r.product_family || ''}</td>
+        <td>${r.due_date || ''}</td>
+        <td>${r.actual_end || r.end_date || '—'}</td>
+        <td style="color:${daysColor};font-weight:bold">${days >= 0 ? '+' : ''}${days}</td>
+        <td><span class="badge ${statusBadge}">${r.status || ''}</span></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7">No delivery data available</td></tr>';
+
+  } catch(e) { console.error('OTD tab error:', e); }
+}
+
+// ===================================================================
+// TAB SWITCHING WITH LAZY LOAD
+// ===================================================================
+function initPerfTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Deactivate all
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      // Activate clicked
+      btn.classList.add('active');
+      const target = document.getElementById(btn.dataset.tab);
+      if (target) target.classList.add('active');
+
+      // Lazy-load tab data
+      const tabId = btn.dataset.tab;
+      if (tabId === 'tab-quality') {
+        setTimeout(() => loadQuality(), 50);
+      } else if (tabId === 'tab-scrap') {
+        setTimeout(() => loadScrap(), 50);
+      } else if (tabId === 'tab-otd') {
+        setTimeout(() => loadOTD(), 50);
+      }
+    });
+  });
+}
+
+// ===================================================================
+// INIT
+// ===================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  initPerfTabs();
+  loadTopKPIs();
+  initFilters(); // loads OEE tab data
+});
+</script>
+{% endblock %}

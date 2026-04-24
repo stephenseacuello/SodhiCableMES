@@ -1,0 +1,98 @@
+{% extends "base.html" %}{% set active_page = "suppliers" %}
+{% block title %}Supplier Scorecards — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Supplier Performance Scorecards</h1>
+<p class="page-subtitle">Aggregate supplier metrics — lead time, availability, and material inventory</p>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Total Suppliers</div><div class="kpi-value" id="kpiSuppliers">—</div></div>
+  <div class="kpi-card"><div class="kpi-label">Avg Lead Time</div><div class="kpi-value" id="kpiLeadTime">—</div><span class="kpi-unit">days</span></div>
+  <div class="kpi-card"><div class="kpi-label">Avg Availability</div><div class="kpi-value" id="kpiAvail">—</div><span class="kpi-unit">%</span></div>
+</div>
+
+<div class="chart-card">
+  <h3>Supplier Scorecard</h3>
+  <table class="data-table" id="scorecardTable">
+    <thead>
+      <tr>
+        <th>Supplier</th>
+        <th>Materials Supplied</th>
+        <th>Avg Lead Time (days)</th>
+        <th>Total On-Hand</th>
+        <th>Availability %</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="chart-card" id="detailPanel" style="display:none;margin-top:16px">
+  <h3 id="detailTitle">Supplier Materials</h3>
+  <table class="data-table" id="detailTable">
+    <thead>
+      <tr>
+        <th>Material ID</th>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Unit</th>
+        <th>Lead Time (days)</th>
+        <th>Total On-Hand</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+let scorecardData = [];
+
+async function loadScorecard() {
+  const data = await apiFetch('/api/suppliers/scorecard');
+  scorecardData = data;
+
+  // KPI calculations
+  const total = data.length;
+  const avgLead = total > 0 ? (data.reduce((s, r) => s + (r.avg_lead_time || 0), 0) / total).toFixed(1) : '—';
+  const avgAvail = total > 0 ? (data.reduce((s, r) => s + (r.availability_pct || 0), 0) / total).toFixed(1) : '—';
+
+  document.getElementById('kpiSuppliers').textContent = total;
+  document.getElementById('kpiLeadTime').textContent = avgLead;
+  document.getElementById('kpiAvail').textContent = avgAvail;
+
+  // Build scorecard table
+  const tbody = document.querySelector('#scorecardTable tbody');
+  tbody.innerHTML = data.map(r => {
+    const pct = r.availability_pct || 0;
+    const color = pct >= 90 ? 'green' : pct >= 70 ? '#c59000' : 'red';
+    return `<tr style="cursor:pointer" onclick="loadDetail('${r.supplier.replace(/'/g, "\\'")}')">
+      <td>${r.supplier}</td>
+      <td class="number">${r.materials_supplied}</td>
+      <td class="number">${r.avg_lead_time}</td>
+      <td class="number">${r.total_on_hand}</td>
+      <td><span class="badge" style="background:${color};color:#fff">${pct}%</span></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadDetail(supplier) {
+  const data = await apiFetch('/api/suppliers/materials?supplier=' + encodeURIComponent(supplier));
+  const panel = document.getElementById('detailPanel');
+  document.getElementById('detailTitle').textContent = supplier + ' — Materials';
+  const tbody = document.querySelector('#detailTable tbody');
+  tbody.innerHTML = data.map(r => {
+    return `<tr>
+      <td>${r.material_id}</td>
+      <td>${r.name || '—'}</td>
+      <td>${r.description || '—'}</td>
+      <td>${r.unit || '—'}</td>
+      <td class="number">${r.lead_time_days ?? '—'}</td>
+      <td class="number">${r.total_on_hand}</td>
+    </tr>`;
+  }).join('');
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth' });
+}
+
+document.addEventListener('DOMContentLoaded', loadScorecard);
+</script>{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}{% set active_page = "sales" %}
+{% block title %}Sales Orders & ATP — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Sales Orders & ATP</h1>
+<p class="page-subtitle">Order tracking, line-item detail, and Available-To-Promise checking</p>
+
+<div class="kpi-grid">
+  <div class="kpi-card"><div class="kpi-label">Total Orders</div><div class="kpi-value" id="kpiTotal">--</div></div>
+  <div class="kpi-card blue"><div class="kpi-label">Open Orders</div><div class="kpi-value" id="kpiOpen">--</div></div>
+  <div class="kpi-card"><div class="kpi-label">Total Value ($)</div><div class="kpi-value" id="kpiValue">--</div></div>
+  <div class="kpi-card green"><div class="kpi-label">On-Time %</div><div class="kpi-value" id="kpiOnTime">--</div><span class="kpi-unit">%</span></div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-orders">Orders</button>
+  <button class="tab-btn" data-tab="tab-atp">ATP Check</button>
+</div>
+
+<div class="tab-content active" id="tab-orders">
+  <div class="chart-card">
+    <h3>Sales Orders</h3>
+    <div style="max-height:500px;overflow-y:auto">
+      <table class="data-table" id="ordersTable">
+        <thead>
+          <tr>
+            <th>Order ID</th><th>Customer</th><th>Order Date</th><th>Required Date</th>
+            <th>Priority</th><th>Status</th><th>Line Items</th><th>Total Value</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="tab-content" id="tab-atp">
+  <div class="chart-card">
+    <h3>Available-To-Promise Check</h3>
+    <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px">
+      <div class="control-group">
+        <label for="atpProduct">Product</label>
+        <select id="atpProduct" style="min-width:240px">
+          <option value="">-- Select Product --</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="atpQty">Quantity (KFT)</label>
+        <input type="number" id="atpQty" min="0" step="0.1" value="10" style="width:120px">
+      </div>
+      <button class="btn btn-primary" onclick="checkATP()">Check Availability</button>
+    </div>
+    <div id="atpResult" style="display:none;padding:16px;border-radius:8px;border:1px solid var(--border)">
+      <h4 style="margin-bottom:8px">ATP Result</h4>
+      <table class="data-table">
+        <tbody>
+          <tr><td><strong>Product</strong></td><td id="atpResProduct">--</td></tr>
+          <tr><td><strong>Requested Qty</strong></td><td id="atpResRequested">--</td></tr>
+          <tr><td><strong>Available Qty</strong></td><td id="atpResAvailable">--</td></tr>
+          <tr><td><strong>Can Promise</strong></td><td id="atpResPromise">--</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+async function loadOrders() {
+  const ordersRes = await apiFetch('/api/sales/orders');
+  const orders = Array.isArray(ordersRes) ? ordersRes : (ordersRes.data || []);
+
+  /* KPIs */
+  const total = orders.length;
+  const open = orders.filter(o => o.status === 'Open' || o.status === 'In Progress').length;
+  const totalValue = orders.reduce((s, o) => s + (o.total_value || 0), 0);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const shipped = orders.filter(o => o.status === 'Shipped');
+  const onTime = shipped.length
+    ? (shipped.filter(o => (o.required_date || '') >= today || o.status === 'Shipped').length / shipped.length * 100).toFixed(1)
+    : '--';
+
+  document.getElementById('kpiTotal').textContent = total;
+  document.getElementById('kpiOpen').textContent = open;
+  document.getElementById('kpiValue').textContent = '$' + totalValue.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('kpiOnTime').textContent = onTime;
+
+  /* Table */
+  const tbody = document.querySelector('#ordersTable tbody');
+  tbody.innerHTML = orders.map(o => {
+    let sc;
+    switch (o.status) {
+      case 'Open':        sc = 'blue'; break;
+      case 'In Progress': sc = 'yellow'; break;
+      case 'Shipped':     sc = 'green'; break;
+      case 'Cancelled':   sc = 'red'; break;
+      default:            sc = 'blue';
+    }
+    const val = (o.total_value || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    return `<tr>
+      <td>${o.sales_order_id}</td>
+      <td>${o.customer_name || o.customer_id}</td>
+      <td>${o.order_date || '--'}</td>
+      <td>${o.required_date || '--'}</td>
+      <td class="number">${o.priority ?? '--'}</td>
+      <td><span class="badge badge-${sc}">${o.status || '--'}</span></td>
+      <td>${o.line_items || '--'} (${o.line_count || 0})</td>
+      <td class="number">$${val}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadProducts() {
+  const products = await apiFetch('/api/sales/products');
+  const sel = document.getElementById('atpProduct');
+  products.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.product_id;
+    opt.textContent = p.product_id + ' — ' + (p.name || '') + (p.family ? ' [' + p.family + ']' : '');
+    sel.appendChild(opt);
+  });
+}
+
+async function checkATP() {
+  const product_id = document.getElementById('atpProduct').value;
+  const qty_kft = parseFloat(document.getElementById('atpQty').value) || 0;
+  if (!product_id) { showToast('Please select a product', 'error'); return; }
+  if (qty_kft <= 0) { showToast('Quantity must be greater than zero', 'error'); return; }
+
+  const res = await apiPost('/api/sales/atp', { product_id, qty_kft });
+
+  document.getElementById('atpResProduct').textContent = res.product_id;
+  document.getElementById('atpResRequested').textContent = res.qty_requested + ' KFT';
+  document.getElementById('atpResAvailable').textContent = res.qty_available + ' KFT';
+
+  const promiseCell = document.getElementById('atpResPromise');
+  if (res.can_promise) {
+    promiseCell.innerHTML = '<span class="badge badge-green">Yes — Can Promise</span>';
+  } else {
+    promiseCell.innerHTML = '<span class="badge badge-red">No — Insufficient Stock</span>';
+  }
+
+  document.getElementById('atpResult').style.display = 'block';
+  showToast(res.can_promise ? 'ATP: Can promise!' : 'ATP: Cannot promise — insufficient inventory', res.can_promise ? 'success' : 'error');
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadOrders(); loadProducts(); });
+</script>{% endblock %}

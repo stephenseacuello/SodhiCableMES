@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% set active_page = "datacollect" %}
+{% block title %}F5 Data Collection — SodhiCable MES{% endblock %}
+{% block content %}
+<div id="alarmBanner" class="alarm-banner" style="display:none">⚠ <span id="alarmBannerText"></span></div>
+
+<h1 class="page-title">F5 — Data Collection &amp; Acquisition</h1>
+<p class="page-subtitle">Real-time sensor monitoring across all work centers — SSE live stream + 10s polling fallback</p>
+
+<!-- Filter Bar -->
+<div class="control-panel" style="margin-bottom:12px"><div class="control-row">
+ <div class="control-group"><label>Work Center</label>
+  <select id="f5WcFilter" onchange="renderSensorGrid()"><option value="">All Work Centers</option></select></div>
+ <div class="control-group"><label>Status</label>
+  <select id="f5StatusFilter" onchange="renderSensorGrid()">
+   <option value="">All</option><option value="CRITICAL">Critical Only</option><option value="WARNING">Warning Only</option><option value="OK">OK Only</option>
+  </select></div>
+ <div style="margin-top:18px;display:flex;align-items:center;gap:8px">
+  <span class="live-dot"></span><span style="color:#22c55e;font-weight:600;font-size:.85rem" id="liveLabel">LIVE</span>
+  <span style="color:var(--text-muted);font-size:11px" id="f5LastUpdate">—</span>
+ </div>
+</div></div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+ <div class="kpi-card blue"><div class="kpi-label">Total Sensors</div><div class="kpi-value" id="kpiSensors">—</div></div>
+ <div class="kpi-card" id="kpiAlarmsCard"><div class="kpi-label">Critical Alarms</div><div class="kpi-value" id="kpiAlarms">0</div></div>
+ <div class="kpi-card" id="kpiWarningsCard"><div class="kpi-label">Warnings</div><div class="kpi-value" id="kpiWarnings">0</div></div>
+ <div class="kpi-card"><div class="kpi-label">Capture Rate</div><div class="kpi-value" id="kpiCapture">—</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Work Centers</div><div class="kpi-value" id="kpiWCs">—</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Data Freshness</div><div class="kpi-value" id="kpiFreshness">—</div></div>
+</div>
+
+<!-- Sensor Grid (grouped by WC) -->
+<div id="sensorContainer"></div>
+
+<!-- Trend Chart (shown when sensor clicked) -->
+<div class="chart-card" style="margin-top:16px" id="trendCard" style="display:none">
+ <h3 id="trendTitle">Click any sensor card above to view its trend</h3>
+ <div class="chart-container"><canvas id="trendChart"></canvas></div>
+</div>
+
+<!-- Recent Alarms -->
+<div class="chart-card" style="margin-top:16px">
+ <h3>Recent Alarms & Deviations</h3>
+ <div style="max-height:280px;overflow-y:auto">
+  <table class="data-table" id="alarmsTable" style="font-size:11px">
+   <thead><tr><th>WC</th><th>Parameter</th><th>Value</th><th>Setpoint</th><th>Severity</th><th>Method</th><th>Time</th><th>Resolved</th></tr></thead>
+   <tbody><tr><td colspan="8">Loading…</td></tr></tbody>
+  </table>
+ </div>
+</div>
+
+<style>
+.alarm-banner{background:#ef4444;color:#fff;text-align:center;padding:10px;font-weight:700;animation:flash 1s infinite}
+@keyframes flash{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+.live-dot{width:10px;height:10px;background:#22c55e;border-radius:50%;animation:pulse 1.5s infinite}
+.wc-group{margin-bottom:16px}
+.wc-group-header{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-gold);font-weight:700;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center}
+.wc-group-header .wc-count{font-size:10px;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0}
+.sensor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.sensor-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:10px;cursor:pointer;transition:all .2s;position:relative}
+.sensor-card:hover{box-shadow:0 0 12px rgba(59,130,246,.3);border-color:#3b82f6}
+.sensor-card.alarm{border-color:#ef4444;background:rgba(239,68,68,0.05)}
+.sensor-card.warning{border-color:#eab308;background:rgba(234,179,8,0.05)}
+.sensor-card .wc{font-weight:700;font-size:.8rem;display:flex;justify-content:space-between;align-items:center}
+.sensor-card .param{font-size:.72rem;color:var(--text-muted);margin-top:2px}
+.sensor-card .val{font-size:1.3rem;font-weight:700;margin:4px 0 2px}
+.sensor-card .limits{font-size:.65rem;color:var(--text-muted)}
+.sensor-card .time{font-size:.65rem;color:var(--text-muted)}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-ok{background:#22c55e;box-shadow:0 0 4px #22c55e}
+.dot-warn{background:#eab308;box-shadow:0 0 4px #eab308}
+.dot-crit{background:#ef4444;box-shadow:0 0 6px #ef4444;animation:pulse 1s infinite}
+.spark-bar{display:flex;gap:1px;align-items:flex-end;height:20px;margin:4px 0}
+.spark-bar span{flex:1;background:#3b82f6;border-radius:1px;min-width:2px}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+let trendChart=null, sensorData=[], sseSource=null;
+
+const UNITS = {
+  'Temperature_F':'°F','BatchTemp_F':'°F','Tension_lbf':'lbf','LineSpeed_fpm':'fpm',
+  'InsulationOD_in':'in','JacketOD_in':'in','WireDiameter_in':'in','CableOD_in':'in',
+  'ArmorOD_in':'in','FEP_OD_mil':'mil','FiberOD_um':'µm','CutLength_ft':'ft',
+  'BraidCoverage_pct':'%','LayLength_in':'in','RotorSpeed_rpm':'RPM',
+  'RamPressure_psi':'PSI','PowerDraw_kW':'kW',
+};
+
+async function loadLiveStatus() {
+  try {
+    const d = await apiFetch('/api/datacollect/live_status');
+    document.getElementById('kpiSensors').textContent = d.total || '—';
+    const alarms = d.alarms || 0;
+    const warnings = d.warnings || 0;
+    document.getElementById('kpiAlarms').textContent = alarms;
+    document.getElementById('kpiAlarmsCard').className = 'kpi-card ' + (alarms > 0 ? 'red' : 'green');
+    document.getElementById('kpiWarnings').textContent = warnings;
+    document.getElementById('kpiWarningsCard').className = 'kpi-card ' + (warnings > 0 ? 'yellow' : 'green');
+
+    const banner = document.getElementById('alarmBanner');
+    if (alarms > 0) { banner.style.display = 'block'; document.getElementById('alarmBannerText').textContent = alarms + ' CRITICAL alarm(s) active'; }
+    else { banner.style.display = 'none'; }
+
+    sensorData = d.sensors || [];
+
+    // Populate WC filter (once)
+    const wcSel = document.getElementById('f5WcFilter');
+    if (wcSel.options.length <= 1) {
+      const wcs = [...new Set(sensorData.map(s => s.wc_id).filter(Boolean))].sort();
+      document.getElementById('kpiWCs').textContent = wcs.length;
+      wcs.forEach(wc => { const o = document.createElement('option'); o.value = wc; o.textContent = wc; wcSel.appendChild(o); });
+    }
+
+    // Data freshness
+    const now = Date.now();
+    const timestamps = sensorData.map(s => s.timestamp ? new Date(s.timestamp).getTime() : 0).filter(t => t > 0);
+    if (timestamps.length) {
+      const newest = Math.max(...timestamps);
+      const ageSec = Math.round((now - newest) / 1000);
+      document.getElementById('kpiFreshness').textContent = ageSec < 60 ? ageSec + 's' : Math.round(ageSec/60) + 'm';
+    }
+
+    document.getElementById('f5LastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    renderSensorGrid();
+  } catch(e) { console.error('live_status error:', e); }
+}
+
+function renderSensorGrid() {
+  const container = document.getElementById('sensorContainer');
+  const wcFilter = document.getElementById('f5WcFilter').value;
+  const statusFilter = document.getElementById('f5StatusFilter').value;
+
+  let filtered = sensorData;
+  if (wcFilter) filtered = filtered.filter(s => s.wc_id === wcFilter);
+  if (statusFilter) filtered = filtered.filter(s => (s.threshold_status || 'OK') === statusFilter);
+
+  // Group by WC
+  const groups = {};
+  filtered.forEach(s => {
+    const wc = s.wc_id || 'Unknown';
+    if (!groups[wc]) groups[wc] = [];
+    groups[wc].push(s);
+  });
+
+  const wcOrder = Object.keys(groups).sort();
+  container.innerHTML = wcOrder.map(wc => {
+    const sensors = groups[wc];
+    const alarmCount = sensors.filter(s => s.threshold_status === 'CRITICAL').length;
+    const warnCount = sensors.filter(s => s.threshold_status === 'WARNING').length;
+    const statusDots = (alarmCount > 0 ? `<span class="dot-crit" style="width:6px;height:6px;display:inline-block;border-radius:50;margin-right:4px"></span>${alarmCount} ` : '') +
+                       (warnCount > 0 ? `<span class="dot-warn" style="width:6px;height:6px;display:inline-block;border-radius:50;margin-right:4px"></span>${warnCount}` : '');
+    return `<div class="wc-group">
+      <div class="wc-group-header"><span>${wc}</span><span class="wc-count">${sensors.length} sensors ${statusDots}</span></div>
+      <div class="sensor-grid">${sensors.map((s, i) => renderSensorCard(s, filtered.indexOf(s))).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSensorCard(s, idx) {
+  const status = s.threshold_status || 'OK';
+  const dotClass = status === 'CRITICAL' ? 'dot-crit' : status === 'WARNING' ? 'dot-warn' : 'dot-ok';
+  const cardClass = status === 'CRITICAL' ? 'alarm' : status === 'WARNING' ? 'warning' : '';
+  const v = s.value != null ? Number(s.value) : null;
+  const unit = UNITS[s.parameter] || '';
+  const precision = unit === 'in' || unit === 'mil' ? 4 : unit === '°F' || unit === 'PSI' ? 1 : unit === 'fpm' || unit === 'RPM' ? 0 : 2;
+  const display = v !== null ? v.toFixed(precision) : '—';
+  const limits = (s.setpoint != null ? 'SP:' + Number(s.setpoint).toFixed(precision) : '') +
+                 (s.lower_limit != null && s.upper_limit != null ? ' [' + Number(s.lower_limit).toFixed(precision) + '–' + Number(s.upper_limit).toFixed(precision) + ']' : '');
+
+  // Mini sparkline from sparkline data
+  let sparkHtml = '';
+  const sparkData = s.sparkline || s.history || [];
+  if (sparkData.length > 3) {
+    const vals = sparkData.slice(-15).map(v => typeof v === 'object' ? v.value : v).filter(v => v != null);
+    const mn = Math.min(...vals), mx = Math.max(...vals), range = mx - mn || 1;
+    sparkHtml = `<div class="spark-bar">${vals.map(v => `<span style="height:${Math.max(2, ((v-mn)/range)*18)}px"></span>`).join('')}</div>`;
+  }
+
+  const timeStr = s.timestamp ? s.timestamp.split(' ').pop().split('.')[0] : '';
+
+  return `<div class="sensor-card ${cardClass}" onclick="showTrend('${s.wc_id}','${s.parameter}')">
+    <div class="wc">${s.parameter} <span class="status-dot ${dotClass}"></span></div>
+    <div class="val">${display}<span style="font-size:.6em;font-weight:400;margin-left:3px">${unit}</span></div>
+    ${sparkHtml}
+    <div class="limits">${limits}</div>
+    <div class="time">${timeStr}</div>
+  </div>`;
+}
+
+async function showTrend(wcId, param) {
+  document.getElementById('trendTitle').textContent = wcId + ' — ' + param + ' Trend';
+  try {
+    const d = await apiFetch('/api/datacollect/readings?wc_id=' + encodeURIComponent(wcId) + '&parameter=' + encodeURIComponent(param) + '&limit=200');
+    const rows = (d.readings || []).reverse();
+    if (trendChart) { trendChart.destroy(); trendChart = null; }
+    if (!rows.length || typeof Chart === 'undefined') return;
+    const unit = UNITS[param] || '';
+    const sensor = sensorData.find(s => s.wc_id === wcId && s.parameter === param) || {};
+    const ann = {};
+    const annotations = [];
+    if (sensor.upper_limit != null) annotations.push({type:'line',yMin:sensor.upper_limit,yMax:sensor.upper_limit,borderColor:'#ef4444',borderDash:[6,4],borderWidth:1,label:{content:'USL '+sensor.upper_limit,display:true,position:'end',font:{size:9}}});
+    if (sensor.lower_limit != null) annotations.push({type:'line',yMin:sensor.lower_limit,yMax:sensor.lower_limit,borderColor:'#ef4444',borderDash:[6,4],borderWidth:1,label:{content:'LSL '+sensor.lower_limit,display:true,position:'end',font:{size:9}}});
+    if (sensor.setpoint != null) annotations.push({type:'line',yMin:sensor.setpoint,yMax:sensor.setpoint,borderColor:'#22c55e',borderDash:[4,3],borderWidth:1,label:{content:'SP '+sensor.setpoint,display:true,position:'start',font:{size:9}}});
+    if (annotations.length) ann.annotations = annotations;
+    trendChart = new Chart(document.getElementById('trendChart'), {
+      type: 'line',
+      data: { labels: rows.map(r => r.timestamp), datasets: [{
+        label: param + (unit ? ' ('+unit+')' : ''),
+        data: rows.map(r => r.value), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.08)',
+        pointRadius: 1, fill: true, tension: 0.3, borderWidth: 2
+      }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        scales: { x: { ticks: { maxTicksLimit: 10, autoSkip: true, maxRotation: 45, font: { size: 9 } } },
+                  y: { title: { display: true, text: param + (unit ? ' ('+unit+')' : '') } } },
+        plugins: { annotation: Object.keys(ann).length ? ann : undefined, legend: { display: false } }
+      }
+    });
+  } catch(e) { console.error('trend error:', e); }
+}
+
+async function loadAlarms() {
+  try {
+    const d = await apiFetch('/api/datacollect/alarms');
+    const rows = d.alarms || d || [];
+    const tb = document.getElementById('alarmsTable').querySelector('tbody');
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted)">No recent alarms — all sensors nominal</td></tr>'; return; }
+    tb.innerHTML = rows.map(a => {
+      const bc = a.severity === 'CRITICAL' ? '#ef4444' : a.severity === 'WARNING' ? '#eab308' : '#3b82f6';
+      return `<tr>
+        <td>${a.wc_id || ''}</td><td>${a.parameter || ''}</td>
+        <td>${a.value != null ? Number(a.value).toFixed(3) : ''}</td>
+        <td>${a.setpoint != null ? a.setpoint : ''}</td>
+        <td><span class="badge" style="background:${bc};color:#fff;padding:2px 6px;border-radius:4px;font-size:10px">${a.severity || ''}</span></td>
+        <td>${a.detection_method || ''}</td>
+        <td style="font-size:10px">${a.timestamp || ''}</td>
+        <td>${a.resolved ? '<span style="color:#22c55e">Yes</span>' : '<span style="color:#ef4444">No</span>'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.error('alarms error:', e); }
+}
+
+async function loadCaptureRate() {
+  try {
+    const d = await apiFetch('/api/datacollect/capture_rate');
+    document.getElementById('kpiCapture').textContent = (d.capture_rate_pct != null ? d.capture_rate_pct.toFixed(1) + '%' : '—');
+  } catch(e) {}
+}
+
+// Try SSE for real-time updates, fall back to polling
+function startSSE() {
+  try {
+    sseSource = new EventSource('/api/stream/process_data');
+    sseSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.count > 0) {
+          document.getElementById('f5LastUpdate').textContent = 'SSE ' + new Date().toLocaleTimeString();
+          // Refresh full status every 3rd SSE event to stay current
+          if (Math.random() < 0.3) loadLiveStatus();
+        }
+      } catch(err) {}
+    };
+    sseSource.onerror = () => {
+      document.getElementById('liveLabel').textContent = 'POLLING';
+      sseSource.close(); sseSource = null;
+    };
+  } catch(e) {}
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadLiveStatus();
+  loadAlarms();
+  loadCaptureRate();
+  startSSE();
+  // Polling fallback (always runs — SSE supplements it)
+  setInterval(() => { loadLiveStatus(); loadCaptureRate(); }, 10000);
+  setInterval(loadAlarms, 30000);
+});
+</script>
+{% endblock %}

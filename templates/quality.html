@@ -1,0 +1,123 @@
+{% extends "base.html" %}{% set active_page = "quality" %}
+{% block title %}F7 — Quality / SPC — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F7 — Quality Management & SPC</h1>
+<p class="page-subtitle">X-bar/R control charts, Cpk process capability, NCR tracking — all extrusion lines</p>
+
+<div class="control-panel"><div class="control-row">
+ <div class="control-group"><label for="wcFilter">Work Center</label>
+  <select id="wcFilter" onchange="loadSPC();loadCpk();updateExport()"><option value="">All Work Centers</option></select></div>
+ <div class="control-group"><label for="paramFilter">Parameter</label>
+  <select id="paramFilter" onchange="loadSPC();loadCpk();updateExport()"><option value="">All Parameters</option></select></div>
+ <a id="spcExportLink" href="/api/quality/spc/export" class="btn-export" style="align-self:flex-end" title="Export SPC data to CSV">Export SPC CSV</a>
+</div></div>
+
+<div class="kpi-grid" id="cpkCards" aria-live="polite"></div>
+
+<div class="tab-bar"><button class="tab-btn active" data-tab="tab-spc">X-bar Charts</button><button class="tab-btn" data-tab="tab-cpk">Cpk Table</button><button class="tab-btn" data-tab="tab-ncr">NCR Log</button><button class="tab-btn" data-tab="tab-spark">Spark Tests</button></div>
+
+<div class="tab-content active" id="tab-spc">
+ <div class="chart-card"><h3>X-bar Chart with UCL/CL/LCL</h3><div class="chart-container" style="height:350px"><canvas id="xbarChart" role="img" aria-label="X-bar control chart with UCL, CL, and LCL lines"></canvas></div></div>
+ <div class="chart-card" style="margin-top:12px"><h3>SPC Readings (<span id="spcCount">0</span>)</h3>
+  <div style="max-height:300px;overflow-y:auto">
+   <table class="data-table" id="spcTable"><caption class="sr-only">SPC measurement readings</caption><thead><tr><th scope="col">Date</th><th scope="col">WC</th><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col">UCL</th><th scope="col">CL</th><th scope="col">LCL</th><th scope="col">Status</th></tr></thead><tbody></tbody></table>
+  </div></div>
+</div>
+
+<div class="tab-content" id="tab-cpk">
+ <div class="chart-card"><h3>Process Capability (Cpk) — Target: 1.33</h3>
+  <table class="data-table" id="cpkTable"><caption class="sr-only">Process capability Cpk results</caption><thead><tr><th scope="col">WC</th><th scope="col">Parameter</th><th scope="col">n</th><th scope="col">Mean</th><th scope="col">Sigma</th><th scope="col">USL</th><th scope="col">LSL</th><th scope="col">Cp</th><th scope="col">Cpk</th><th scope="col">Status</th></tr></thead><tbody></tbody></table>
+ </div>
+</div>
+
+<div class="tab-content" id="tab-ncr">
+ <div class="chart-card"><h3>Non-Conformance Reports</h3>
+  <table class="data-table" id="ncrTable"><caption class="sr-only">Non-conformance reports</caption><thead><tr><th scope="col">NCR</th><th scope="col">Product</th><th scope="col">WO</th><th scope="col">Severity</th><th scope="col">Description</th><th scope="col">Status</th><th scope="col">Date</th></tr></thead><tbody></tbody></table>
+ </div>
+</div>
+
+<div class="tab-content" id="tab-spark">
+ <div class="kpi-grid" id="sparkKPIs" aria-live="polite"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+let xbarChart = null;
+async function initFilters() {
+  const f = await apiFetch('/api/quality/spc_filters');
+  const ws = document.getElementById('wcFilter'), ps = document.getElementById('paramFilter');
+  f.work_centers.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = w; ws.appendChild(o); });
+  f.parameters.forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; ps.appendChild(o); });
+  loadSPC(); loadCpk(); loadNCR(); loadSpark();
+}
+function updateExport() {
+  const wc = document.getElementById('wcFilter').value;
+  const param = document.getElementById('paramFilter').value;
+  let qs = '?';
+  if (wc) qs += `wc_id=${wc}&`;
+  if (param) qs += `parameter=${param}&`;
+  const el = document.getElementById('spcExportLink');
+  if (el) el.href = '/api/quality/spc/export' + qs;
+}
+async function loadSPC() {
+  const wc = document.getElementById('wcFilter').value, param = document.getElementById('paramFilter').value;
+  const d = await apiFetch(`/api/quality/spc?wc_id=${wc}&parameter=${param}`);
+  document.getElementById('spcCount').textContent = d.count;
+  const r = d.readings || [];
+  if (xbarChart) xbarChart.destroy();
+  if (r.length) {
+    xbarChart = new Chart(document.getElementById('xbarChart'), {
+      type:'line', data:{ labels:r.map((x,i)=>(x.measurement_date||'').substring(5,16)||i),
+        datasets:[{label:r[0].parameter_name||'Value', data:r.map(x=>x.measured_value), borderColor:'#3b82f6',
+          pointRadius:2, pointBackgroundColor:r.map(x=>x.status==='OOC'?'#ef4444':x.status==='Warning'?'#f59e0b':'#3b82f6'),
+          tension:0.1, fill:false}]},
+      options:{responsive:true, maintainAspectRatio:false,
+        scales:{y:{title:{display:true,text:r[0].parameter_name||'Value'}}},
+        plugins:{annotation:{annotations:{
+          ucl:{type:'line',yMin:d.ucl,yMax:d.ucl,borderColor:'#ef4444',borderDash:[5,5],borderWidth:2,label:{display:true,content:'UCL',position:'start',backgroundColor:'#ef4444'}},
+          cl:{type:'line',yMin:d.cl,yMax:d.cl,borderColor:'#22c55e',borderWidth:1,label:{display:true,content:'CL',position:'start',backgroundColor:'#22c55e'}},
+          lcl:{type:'line',yMin:d.lcl,yMax:d.lcl,borderColor:'#ef4444',borderDash:[5,5],borderWidth:2,label:{display:true,content:'LCL',position:'start',backgroundColor:'#ef4444'}}
+        }}}}
+    });
+  }
+  document.querySelector('#spcTable tbody').innerHTML = r.slice(0,50).map(x => {
+    const sc = x.status==='OOC'?'red':x.status==='Warning'?'yellow':'green';
+    return `<tr><td>${x.measurement_date||''}</td><td>${x.wc_id}</td><td>${x.parameter_name}</td><td class="number">${x.measured_value}</td><td class="number">${x.ucl||''}</td><td class="number">${x.cl||''}</td><td class="number">${x.lcl||''}</td><td><span class="badge badge-${sc}">${x.status}</span></td></tr>`;
+  }).join('');
+}
+async function loadCpk() {
+  const wc = document.getElementById('wcFilter').value, param = document.getElementById('paramFilter').value;
+  const d = await apiFetch(`/api/quality/cpk?wc_id=${wc}&parameter=${param}`);
+  const res = d.cpk_results || [];
+  document.getElementById('cpkCards').innerHTML = res.slice(0,6).map(r => {
+    const c = r.cpk>=1.33?'green':r.cpk>=1.0?'yellow':'red';
+    return `<div class="kpi-card ${c}"><div class="kpi-label">${r.wc_id} — ${r.parameter}</div><div class="kpi-value">${r.cpk.toFixed(2)}</div><span class="kpi-unit">Cpk</span><div class="kpi-target">${r.status} (Cp=${r.cp.toFixed(2)}, n=${r.n_samples})</div></div>`;
+  }).join('');
+  document.querySelector('#cpkTable tbody').innerHTML = res.map(r => {
+    const sc = r.cpk>=1.33?'green':r.cpk>=1.0?'yellow':'red';
+    return `<tr><td>${r.wc_id}</td><td>${r.parameter}</td><td class="number">${r.n_samples}</td><td class="number">${r.mean}</td><td class="number">${r.sigma}</td><td class="number">${r.usl}</td><td class="number">${r.lsl}</td><td class="number">${r.cp.toFixed(3)}</td><td class="number"><strong>${r.cpk.toFixed(3)}</strong></td><td><span class="badge badge-${sc}">${r.status}</span></td></tr>`;
+  }).join('');
+}
+async function loadNCR() {
+  const ncrRes = await apiFetch('/api/quality/ncr');
+  const ncrs = Array.isArray(ncrRes) ? ncrRes : (ncrRes.data || []);
+  document.querySelector('#ncrTable tbody').innerHTML = ncrs.length ? ncrs.map(r => {
+    const sc=r.severity==='Critical'?'red':r.severity==='Major'?'yellow':'green';
+    const st=r.status==='Open'?'red':r.status==='Closed'?'green':'yellow';
+    return `<tr><td>NCR-${r.ncr_id}</td><td>${r.product_id||'-'}</td><td>${r.wo_id||'-'}</td><td><span class="badge badge-${sc}">${r.severity}</span></td><td>${r.description||'-'}</td><td><span class="badge badge-${st}">${r.status}</span></td><td>${r.reported_date||'-'}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" style="color:var(--text-muted)">No NCRs recorded</td></tr>';
+}
+async function loadSpark() {
+  const s = await apiFetch('/api/quality/spark_summary');
+  const total = s.reduce((a,r)=>a+r.cnt,0);
+  const pass_n = (s.find(r=>r.result==='PASS')||{}).cnt||0;
+  const fail_n = (s.find(r=>r.result==='FAIL')||{}).cnt||0;
+  const rate = total>0?(pass_n/total*100).toFixed(1):0;
+  document.getElementById('sparkKPIs').innerHTML = `
+    <div class="kpi-card ${rate>=99?'green':'yellow'}"><div class="kpi-label">Pass Rate</div><div class="kpi-value">${rate}</div><span class="kpi-unit">%</span></div>
+    <div class="kpi-card blue"><div class="kpi-label">Total Tests</div><div class="kpi-value">${total}</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Passed</div><div class="kpi-value">${pass_n}</div></div>
+    <div class="kpi-card ${fail_n>0?'red':'green'}"><div class="kpi-label">Failed</div><div class="kpi-value">${fail_n}</div></div>`;
+}
+document.addEventListener('DOMContentLoaded', initFilters);
+</script>{% endblock %}

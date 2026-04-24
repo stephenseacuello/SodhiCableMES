@@ -1,0 +1,205 @@
+{% extends "base.html" %}{% set active_page = "system" %}
+{% block title %}System Metrics — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">System Metrics</h1>
+<p class="page-subtitle">Database statistics, data freshness, registered endpoints, and OPC-UA simulator status</p>
+
+<!-- KPI Cards -->
+<div class="kpi-grid" id="sysKPIs" style="margin-bottom:16px">
+ <div class="kpi-card blue" id="kpiEndpoints"><div class="kpi-label">Endpoints</div><div class="kpi-value">--</div></div>
+ <div class="kpi-card blue" id="kpiTables"><div class="kpi-label">Tables</div><div class="kpi-value">--</div></div>
+ <div class="kpi-card blue" id="kpiViews"><div class="kpi-label">Views</div><div class="kpi-value">--</div></div>
+ <div class="kpi-card blue" id="kpiRows"><div class="kpi-label">Total Rows</div><div class="kpi-value">--</div></div>
+ <div class="kpi-card blue" id="kpiSize"><div class="kpi-label">DB Size (MB)</div><div class="kpi-value">--</div></div>
+</div>
+
+<!-- Data Freshness -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Data Freshness</h3>
+ <div class="kpi-grid" id="freshnessCards" style="margin-top:8px">
+  <div class="kpi-card" id="freshProcess"><div class="kpi-label">Last Process Reading</div><div class="kpi-value" style="font-size:13px">--</div></div>
+  <div class="kpi-card" id="freshShift"><div class="kpi-label">Last Shift Report</div><div class="kpi-value" style="font-size:13px">--</div></div>
+  <div class="kpi-card" id="freshAudit"><div class="kpi-label">Last Audit Entry</div><div class="kpi-value" style="font-size:13px">--</div></div>
+  <div class="kpi-card" id="freshEnergy"><div class="kpi-label">Last Energy Reading</div><div class="kpi-value" style="font-size:13px">--</div></div>
+ </div>
+</div>
+
+<!-- OPC-UA Status -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>OPC-UA Simulator</h3>
+ <div style="display:flex;align-items:center;gap:16px;margin-top:8px">
+  <span style="font-size:13px">Status:</span>
+  <span id="opcuaBadge" class="badge badge-gray">Unknown</span>
+  <button class="btn btn-success" onclick="opcuaStart()" style="padding:4px 14px;font-size:12px">Start</button>
+  <button class="btn" style="padding:4px 14px;font-size:12px;background:var(--bg-secondary);color:var(--text-secondary)" onclick="opcuaStop()">Stop</button>
+ </div>
+</div>
+
+<!-- Live Demo Scenarios -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Live Demo Scenarios <span id="scenarioBadge" class="badge badge-gray" style="margin-left:8px">Idle</span></h3>
+ <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px">Inject realistic manufacturing events in real-time. Watch dashboards, SCADA, notifications, and F8/F11 update as events cascade.</p>
+ <div id="scenarioButtons" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+ <div id="scenarioLog" style="display:none;max-height:300px;overflow-y:auto;background:var(--bg-secondary);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;line-height:1.8"></div>
+</div>
+
+<!-- Table Stats -->
+<div class="chart-card" style="margin-bottom:16px">
+ <h3>Top 25 Tables by Row Count</h3>
+ <div style="max-height:500px;overflow-y:auto">
+  <table class="data-table" id="tableStats">
+   <thead><tr><th>Table</th><th>Rows</th><th style="width:50%">Distribution</th></tr></thead>
+   <tbody><tr><td colspan="3" style="color:var(--text-muted);text-align:center">Loading...</td></tr></tbody>
+  </table>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+async function loadMetrics() {
+  try {
+    const m = await apiFetch('/api/system/metrics');
+
+    // KPI cards
+    setKPIAnimated('kpiEndpoints', m.endpoints);
+    setKPIAnimated('kpiTables', m.tables);
+    setKPIAnimated('kpiViews', m.views);
+    setKPIAnimated('kpiRows', m.total_rows);
+    setKPIAnimated('kpiSize', m.db_size_mb);
+
+    // Freshness
+    const f = m.freshness || {};
+    document.querySelector('#freshProcess .kpi-value').textContent = f.process_data_live || 'No data';
+    document.querySelector('#freshShift .kpi-value').textContent = f.shift_reports || 'No data';
+    document.querySelector('#freshAudit .kpi-value').textContent = f.audit_trail || 'No data';
+    document.querySelector('#freshEnergy .kpi-value').textContent = f.energy_readings || 'No data';
+
+    // Table stats
+    const stats = m.table_stats || [];
+    const maxRows = stats.length > 0 ? stats[0].rows : 1;
+    const tbody = document.querySelector('#tableStats tbody');
+    if (stats.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);text-align:center">No tables</td></tr>';
+    } else {
+      tbody.innerHTML = stats.map(t => {
+        const pct = Math.max((t.rows / maxRows) * 100, 1);
+        return `<tr>
+          <td><code style="font-size:12px">${t.table}</code></td>
+          <td class="number">${fmt(t.rows)}</td>
+          <td><div style="background:rgba(59,130,246,0.15);border-radius:3px;overflow:hidden;height:18px">
+            <div style="width:${pct}%;height:100%;background:var(--accent-blue);border-radius:3px;min-width:2px"></div>
+          </div></td>
+        </tr>`;
+      }).join('');
+    }
+
+    updateTimestamp();
+  } catch (err) {
+    showToast('Failed to load system metrics: ' + err.message, 'error');
+  }
+}
+
+async function loadOpcuaStatus() {
+  try {
+    const d = await apiFetch('/api/opcua/status');
+    const badge = document.getElementById('opcuaBadge');
+    if (d.running) {
+      badge.textContent = 'Running';
+      badge.className = 'badge badge-green';
+    } else {
+      badge.textContent = 'Stopped';
+      badge.className = 'badge badge-gray';
+    }
+  } catch (e) {
+    document.getElementById('opcuaBadge').textContent = 'Unavailable';
+  }
+}
+
+async function opcuaStart() {
+  try {
+    const d = await apiPost('/api/opcua/start');
+    showToast('OPC-UA Simulator: ' + d.status, 'success');
+    loadOpcuaStatus();
+  } catch (e) { showToast('Failed to start OPC-UA', 'error'); }
+}
+
+async function opcuaStop() {
+  try {
+    const d = await apiPost('/api/opcua/stop');
+    showToast('OPC-UA Simulator: ' + d.status, 'success');
+    loadOpcuaStatus();
+  } catch (e) { showToast('Failed to stop OPC-UA', 'error'); }
+}
+
+// ── Demo Scenarios ──────────────────────────────────────────────
+async function loadScenarios() {
+  try {
+    const d = await apiFetch('/api/scenario/list');
+    const container = document.getElementById('scenarioButtons');
+    const colors = {spark_failure:'var(--accent-red)',cusum_drift:'var(--accent-yellow)',breakdown:'var(--accent-red)',quality_crisis:'#a855f7',shift_handover:'var(--accent-green)'};
+    container.innerHTML = Object.entries(d.scenarios).map(([key, s]) =>
+      `<button class="btn" style="padding:8px 16px;font-size:12px;border-left:3px solid ${colors[key]||'var(--accent-blue)'}"
+              onclick="runScenario('${key}')">
+        <strong>${s.name}</strong><br>
+        <span style="font-size:10px;color:var(--text-muted)">${s.duration_sec}s — ${s.description.substring(0,60)}...</span>
+      </button>`
+    ).join('');
+  } catch(e) {}
+  // Check status
+  try {
+    const s = await apiFetch('/api/scenario/status');
+    const badge = document.getElementById('scenarioBadge');
+    if (s.running) {
+      badge.textContent = 'Running: ' + s.active;
+      badge.className = 'badge badge-yellow';
+    } else {
+      badge.textContent = 'Idle';
+      badge.className = 'badge badge-green';
+    }
+  } catch(e) {}
+}
+
+async function runScenario(name) {
+  const log = document.getElementById('scenarioLog');
+  const badge = document.getElementById('scenarioBadge');
+  log.style.display = 'block';
+  log.innerHTML = '<div style="color:var(--accent-gold)">Launching scenario...</div>';
+  badge.textContent = 'Running...';
+  badge.className = 'badge badge-yellow';
+
+  try {
+    const d = await apiPost('/api/scenario/run', {scenario: name});
+    if (d.error) {
+      log.innerHTML = `<div style="color:var(--accent-red)">${d.error}</div>`;
+      badge.textContent = 'Error'; badge.className = 'badge badge-red';
+      return;
+    }
+    log.innerHTML = `<div style="color:var(--accent-green)"><strong>${d.name}</strong> — ${d.description}</div><div style="color:var(--text-muted)">Duration: ~${d.duration_sec}s. Watch dashboards update in real-time...</div><hr style="border-color:var(--border-color);margin:8px 0">`;
+    showToast(`Scenario "${d.name}" started — watch dashboards!`, 'success', 5000);
+
+    // Poll for completion
+    const poll = setInterval(async () => {
+      try {
+        const s = await apiFetch('/api/scenario/status');
+        if (!s.running) {
+          clearInterval(poll);
+          badge.textContent = 'Complete'; badge.className = 'badge badge-green';
+          log.innerHTML += '<div style="color:var(--accent-green);margin-top:8px"><strong>✓ Scenario complete.</strong> Check Dashboard, SCADA, F8, Notifications.</div>';
+          showToast('Scenario complete — check dashboards!', 'success');
+          // Refresh metrics
+          loadMetrics();
+        }
+      } catch(e) { clearInterval(poll); }
+    }, 3000);
+  } catch(e) {
+    log.innerHTML = `<div style="color:var(--accent-red)">Failed: ${e.message}</div>`;
+    badge.textContent = 'Error'; badge.className = 'badge badge-red';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadMetrics();
+  loadOpcuaStatus();
+  loadScenarios();
+});
+</script>{% endblock %}

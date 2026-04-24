@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+{% set active_page = "process" %}
+{% block title %}F8 Process Control — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F8 — Process Control & Alarm Management</h1>
+<p class="page-subtitle">ISA-95 Level 2 — live monitoring, CUSUM/EWMA detection, alarm rationalization, PID control, hold/release</p>
+
+<!-- Work Center Selector -->
+<div class="control-panel"><div class="control-row">
+ <div class="control-group"><label>Work Center</label>
+  <select id="f8Wc" onchange="loadMonitor()"><option value="">Select Work Center...</option></select></div>
+ <span id="f8WcInfo" style="color:var(--text-muted);font-size:12px;align-self:center;margin-left:8px"></span>
+</div></div>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+ <div class="kpi-card" id="kpiDevsCard"><div class="kpi-label">Open Deviations</div><div class="kpi-value" id="kpiDevs">--</div></div>
+ <div class="kpi-card" id="kpiCritCard"><div class="kpi-label">Critical</div><div class="kpi-value" id="kpiCrit">--</div></div>
+ <div class="kpi-card" id="kpiHoldsCard"><div class="kpi-label">Active Holds</div><div class="kpi-value" id="kpiHolds">--</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Parameters</div><div class="kpi-value" id="kpiParams">--</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Readings</div><div class="kpi-value" id="kpiRead">--</div></div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-monitor">Process Monitor</button>
+ <button class="tab-btn" data-tab="tab-pid">PID Simulation</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PROCESS MONITOR TAB (Live + Deviations + Holds — unified)     -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="tab-content active" id="tab-monitor">
+
+ <!-- Section 1: Live Readings + Environmental -->
+ <div class="chart-card" style="margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+   <h3>Live Sensor Readings <span id="liveWcLabel" style="color:var(--accent-blue)"></span></h3>
+   <div id="envBadge" style="display:none;font-size:11px">
+    <span id="envTemp" style="margin-right:12px"></span>
+    <span id="envHumid"></span>
+   </div>
+  </div>
+  <div id="liveParams" class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+   <p style="color:var(--text-muted);grid-column:1/-1">Select a work center above</p>
+  </div>
+ </div>
+
+ <!-- Section 2: Parameter Deep-Dive (Trend + CUSUM + EWMA) -->
+ <div id="deepDive" style="display:none;margin-bottom:12px">
+  <div class="chart-card">
+   <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 id="ddTitle">--</h3>
+    <button class="btn" style="font-size:11px" onclick="document.getElementById('deepDive').style.display='none'">Close</button>
+   </div>
+   <div class="chart-container" style="height:220px"><canvas id="trendChart"></canvas></div>
+   <div class="chart-grid" style="margin-top:8px">
+    <div><h4 style="font-size:12px;color:var(--accent-red)">CUSUM Drift Detection</h4><div style="height:150px"><canvas id="cusumChart"></canvas></div></div>
+    <div><h4 style="font-size:12px;color:var(--accent-green)">EWMA Smoothing (λ=0.2)</h4><div style="height:150px"><canvas id="ewmaChart"></canvas></div></div>
+   </div>
+  </div>
+ </div>
+
+ <!-- Section 3: Alarm Rationalization Chain -->
+ <div class="chart-card" style="margin-bottom:12px;border-left:4px solid var(--accent-yellow)">
+  <h3 style="font-size:13px;margin-bottom:6px">Alarm Rationalization (F5→F7→F8→F10)</h3>
+  <div id="rationChain" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
+ </div>
+
+ <!-- Section 4: Active Deviations -->
+ <div class="chart-card" style="margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+   <h3>Active Deviations (<span id="devCount">0</span>)</h3>
+   <div style="display:flex;gap:6px">
+    <select id="f8Sev" onchange="loadDeviations()" style="font-size:11px;padding:3px 8px"><option value="">All Sev</option><option>Warning</option><option>Minor</option><option>Major</option><option>Critical</option></select>
+    <select id="f8Res" onchange="loadDeviations()" style="font-size:11px;padding:3px 8px"><option value="">All</option><option value="0">Open</option><option value="1">Resolved</option></select>
+   </div>
+  </div>
+  <div style="max-height:300px;overflow-y:auto">
+   <table class="data-table" id="devTable" style="font-size:12px">
+    <thead><tr><th>Time</th><th>WC</th><th>Parameter</th><th>Value</th><th>SP</th><th>Method</th><th>Severity</th><th>Status</th><th></th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+
+ <!-- Section 5: Cascade Detail (appears on click) -->
+ <div id="cascadePanel" style="display:none;margin-bottom:12px" class="chart-card">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+   <h3 id="cascadeTitle">Alarm Cascade</h3>
+   <button class="btn" style="font-size:11px" onclick="document.getElementById('cascadePanel').style.display='none'">Close</button>
+  </div>
+  <div id="cascadeFlow" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+ </div>
+
+ <!-- Section 6: Active Holds -->
+ <div class="chart-card">
+  <h3>Material Holds</h3>
+  <div style="max-height:200px;overflow-y:auto">
+   <table class="data-table" id="holdTable" style="font-size:12px">
+    <thead><tr><th>Held</th><th>WO</th><th>Lot</th><th>Reason</th><th>Status</th><th>Released</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PID SIMULATION TAB                                            -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="tab-content" id="tab-pid">
+ <div class="chart-card">
+  <h3>PID Controller Simulation</h3>
+  <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px">u(t) = Kp·e + Ki·∑e + Kd·Δe/Δt — adjust gains, set target, simulate with random disturbances</p>
+  <div class="control-row" style="margin-bottom:16px">
+   <div class="control-group"><label>Kp</label><input type="number" id="pidKp" value="2.0" step="0.1" style="width:80px"></div>
+   <div class="control-group"><label>Ki</label><input type="number" id="pidKi" value="0.1" step="0.01" style="width:80px"></div>
+   <div class="control-group"><label>Kd</label><input type="number" id="pidKd" value="0.5" step="0.01" style="width:80px"></div>
+   <div class="control-group"><label>Setpoint</label><input type="number" id="pidSP" value="365" step="1" style="width:90px"></div>
+   <div class="control-group"><label>Steps</label><input type="number" id="pidSteps" value="100" step="10" style="width:80px"></div>
+   <button class="btn btn-primary" onclick="runPID()">Simulate</button>
+  </div>
+  <div class="chart-grid">
+   <div class="chart-card"><h4>PID Response (PV vs SP)</h4><div class="chart-container"><canvas id="pidChart"></canvas></div></div>
+   <div class="chart-card"><h4>Control Output u(t)</h4><div class="chart-container"><canvas id="pidControlChart"></canvas></div></div>
+  </div>
+  <div class="kpi-grid" id="pidKPIs" style="margin-top:12px"></div>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let trendObj=null,cusumObj=null,ewmaObj=null,pidObj=null,pidCtrlObj=null;
+const sevColors={Critical:'#ef4444',Major:'#f59e0b',Minor:'#eab308',Warning:'#3b82f6'};
+
+/* ═══ LOAD EVERYTHING FOR SELECTED WC ══════════════════════════ */
+async function loadMonitor() {
+  const wc = document.getElementById('f8Wc').value;
+  loadSummary(wc);
+  loadLive(wc);
+  loadRationalization(wc);
+  loadDeviations();
+  loadHolds(wc);
+  document.getElementById('deepDive').style.display='none';
+  document.getElementById('cascadePanel').style.display='none';
+}
+
+/* ── Summary KPIs ─────────────────────────────────────────────── */
+async function loadSummary(wc) {
+  try {
+    const s = await apiFetch('/api/process/summary');
+    document.getElementById('kpiDevs').textContent = s.unresolved_deviations;
+    document.getElementById('kpiDevsCard').className='kpi-card '+(s.unresolved_deviations>5?'red':s.unresolved_deviations>2?'yellow':'green');
+    document.getElementById('kpiCrit').textContent = s.critical_alarms;
+    document.getElementById('kpiCritCard').className='kpi-card '+(s.critical_alarms>0?'red':'green');
+    document.getElementById('kpiHolds').textContent = s.active_holds;
+    document.getElementById('kpiHoldsCard').className='kpi-card '+(s.active_holds>0?'red':'green');
+    document.getElementById('kpiRead').textContent = fmt(s.total_readings);
+    document.getElementById('kpiParams').textContent = s.wcs_monitored;
+  } catch(e){}
+}
+
+/* ── Live Readings + Environmental ────────────────────────────── */
+async function loadLive(wc) {
+  const container = document.getElementById('liveParams');
+  const label = document.getElementById('liveWcLabel');
+  const envBadge = document.getElementById('envBadge');
+  if (!wc) { container.innerHTML='<p style="color:var(--text-muted);grid-column:1/-1">Select a work center above</p>'; label.textContent=''; envBadge.style.display='none'; return; }
+  label.textContent = '— ' + wc;
+  try {
+    const data = await apiFetch('/api/process/live_readings?wc_id='+wc);
+    document.getElementById('f8WcInfo').textContent = data.length + ' parameters monitored';
+    if (!data.length) { container.innerHTML='<p style="color:var(--text-muted);grid-column:1/-1">No sensor data for this WC</p>'; return; }
+    container.innerHTML = data.map(r => {
+      let color='green';
+      if(r.quality_flag==='Bad') color='red'; else if(r.quality_flag==='Suspect') color='yellow';
+      else if(r.setpoint&&r.upper_limit&&r.value>r.upper_limit) color='red';
+      else if(r.setpoint&&r.lower_limit&&r.value<r.lower_limit) color='red';
+      const noRecipe = !r.setpoint;
+      const sp = r.setpoint ? `SP:${r.setpoint}` : '<span style="color:#ef4444;font-size:9px">NO RECIPE</span>';
+      const lim = (r.lower_limit&&r.upper_limit) ? `[${r.lower_limit}–${r.upper_limit}]` : '';
+      return `<div class="kpi-card ${noRecipe?'yellow':color}" style="cursor:pointer;padding:12px${noRecipe?';border:2px dashed var(--accent-yellow)':''}" onclick="deepDive('${wc}','${r.parameter}')">
+        <div class="kpi-label" style="font-size:10px">${r.parameter}</div>
+        <div class="kpi-value" style="font-size:20px">${r.value}</div>
+        <div style="font-size:9px;color:var(--text-muted)">${sp} ${lim}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { container.innerHTML='<p style="color:var(--text-muted);grid-column:1/-1">Error loading</p>'; }
+  // Environmental
+  try {
+    const env = await apiFetch('/api/process/environmental?wc_id='+wc);
+    if (env.length) {
+      const l=env[env.length-1]; envBadge.style.display='inline';
+      document.getElementById('envTemp').innerHTML=`🌡️ <strong>${l.temperature_f}°F</strong>`;
+      document.getElementById('envHumid').innerHTML=`💧 <strong>${l.humidity_pct}%</strong>`;
+    } else { envBadge.style.display='none'; }
+  } catch(e){ envBadge.style.display='none'; }
+}
+
+/* ── Deep Dive: Trend + CUSUM + EWMA ─────────────────────────── */
+async function deepDive(wc, param) {
+  document.getElementById('deepDive').style.display='block';
+  document.getElementById('ddTitle').textContent=`${wc} — ${param}`;
+  document.getElementById('deepDive').scrollIntoView({behavior:'smooth',block:'nearest'});
+  // Trend
+  try {
+    const d=await apiFetch(`/api/process/trend?wc_id=${wc}&parameter=${param}`);
+    const r=d.readings||[];
+    if(trendObj)trendObj.destroy();
+    trendObj=new Chart(document.getElementById('trendChart'),{type:'line',
+      data:{labels:r.map(x=>(x.timestamp||'').substring(11,16)),datasets:[{label:param,data:r.map(x=>x.value),borderColor:'#3b82f6',borderWidth:1.5,pointRadius:1,pointBackgroundColor:r.map(x=>x.quality_flag==='Bad'?'#ef4444':x.quality_flag==='Suspect'?'#eab308':'#4ade80'),fill:false,tension:0.2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxRotation:45,font:{size:8}}},y:{title:{display:true,text:param}}}}});
+  } catch(e){}
+  // CUSUM/EWMA
+  try {
+    const ce=await apiFetch(`/api/process/cusum_ewma?wc_id=${wc}&parameter=${param}`);
+    const ts=ce.timestamps.map(t=>(t||'').substring(11,16));
+    if(cusumObj)cusumObj.destroy();
+    cusumObj=new Chart(document.getElementById('cusumChart'),{type:'line',
+      data:{labels:ts,datasets:[{label:'C+',data:ce.cusum_plus,borderColor:'#ef4444',borderWidth:1.5,pointRadius:0,fill:false,tension:0.2},{label:'C-',data:ce.cusum_minus,borderColor:'#3b82f6',borderWidth:1.5,pointRadius:0,fill:false,tension:0.2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10}}},annotation:{annotations:{h:{type:'line',yMin:ce.cusum_h,yMax:ce.cusum_h,borderColor:'#ef444480',borderDash:[4,4],borderWidth:1}}}},scales:{x:{display:false},y:{title:{display:true,text:'CUSUM',font:{size:10}}}}}});
+    if(ewmaObj)ewmaObj.destroy();
+    ewmaObj=new Chart(document.getElementById('ewmaChart'),{type:'line',
+      data:{labels:ts,datasets:[{label:'EWMA',data:ce.ewma,borderColor:'#22c55e',borderWidth:2,pointRadius:0,fill:true,backgroundColor:'rgba(34,197,94,0.06)',tension:0.3},{label:'Raw',data:ce.values,borderColor:'rgba(148,163,184,0.2)',borderWidth:0.5,pointRadius:0,fill:false}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10}}},annotation:{annotations:{mu:{type:'line',yMin:ce.mean,yMax:ce.mean,borderColor:'#f59e0b80',borderDash:[4,4],borderWidth:1}}}},scales:{x:{display:false},y:{title:{display:true,text:'EWMA',font:{size:10}}}}}});
+  } catch(e){}
+}
+
+/* ── Rationalization Chain ────────────────────────────────────── */
+async function loadRationalization(wc) {
+  try {
+    const r=await apiFetch('/api/process/rationalization_summary'+(wc?'?wc_id='+wc:''));
+    document.getElementById('rationChain').innerHTML=
+      `<div style="text-align:center;padding:6px 14px;background:var(--bg-secondary);border-radius:6px"><div style="font-size:18px;font-weight:700">${r.deviations}</div><div style="font-size:9px;color:var(--text-muted)">Deviations</div></div>
+       <span style="color:var(--accent-gold)">→</span>
+       <div style="text-align:center;padding:6px 14px;background:var(--bg-secondary);border-radius:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-red)">${r.auto_ncrs}</div><div style="font-size:9px;color:var(--text-muted)">NCRs</div></div>
+       <span style="color:var(--accent-gold)">→</span>
+       <div style="text-align:center;padding:6px 14px;background:var(--bg-secondary);border-radius:6px"><div style="font-size:18px;font-weight:700;color:var(--accent-yellow)">${r.holds_placed}</div><div style="font-size:9px;color:var(--text-muted)">Holds</div></div>
+       <span style="color:var(--accent-gold)">→</span>
+       <div style="text-align:center;padding:6px 14px;background:var(--bg-secondary);border-radius:6px"><div style="font-size:18px;font-weight:700;color:#a855f7">${r.lots_quarantined}</div><div style="font-size:9px;color:var(--text-muted)">Quarantined</div></div>`;
+  } catch(e){}
+}
+
+/* ── Deviations Table ─────────────────────────────────────────── */
+async function loadDeviations() {
+  const wc=document.getElementById('f8Wc').value,sev=document.getElementById('f8Sev').value,res=document.getElementById('f8Res').value;
+  let qs='?';if(wc)qs+=`wc_id=${wc}&`;if(sev)qs+=`severity=${sev}&`;if(res)qs+=`resolved=${res}&`;
+  try {
+    const data=await apiFetch('/api/process/deviations'+qs);
+    document.getElementById('devCount').textContent=data.length;
+    const tb=document.querySelector('#devTable tbody');
+    tb.innerHTML=data.length?data.map(d=>{
+      const sc=d.severity==='Critical'?'red':d.severity==='Major'?'yellow':'blue';
+      const stBadge=d.resolved?'<span class="badge badge-green" style="font-size:10px">Resolved</span>':
+        `<button class="btn btn-success" style="padding:1px 6px;font-size:10px" onclick="resolveDev(${d.deviation_id})">Resolve</button>`;
+      return `<tr>
+        <td style="font-size:10px">${(d.timestamp||'').substring(5,16)}</td>
+        <td><strong>${d.wc_id}</strong></td><td style="font-size:11px">${d.parameter_name||''}</td>
+        <td class="number">${d.deviation_value!=null?d.deviation_value:''}</td>
+        <td class="number">${d.setpoint_value!=null?d.setpoint_value:''}</td>
+        <td style="font-size:10px">${d.detection_method||''}</td>
+        <td><span class="badge badge-${sc}" style="font-size:10px">${d.severity}</span></td>
+        <td>${stBadge}</td>
+        <td><button class="btn" style="padding:1px 5px;font-size:9px" onclick="showCascade(${d.deviation_id})" title="Show alarm cascade">⛓</button>
+            <button class="btn" style="padding:1px 5px;font-size:9px" onclick="showScrap(${d.deviation_id})" title="Check nearby scrap">🔍</button></td>
+      </tr>`;
+    }).join(''):'<tr><td colspan="9" style="color:var(--text-muted)">No deviations</td></tr>';
+  } catch(e){}
+}
+
+async function resolveDev(id){
+  const action=prompt('Corrective action:');if(action===null)return;
+  try{await apiPost('/api/process/resolve_deviation',{deviation_id:id,action:'resolve',corrective_action:action});showToast('Resolved','success');loadMonitor();}catch(e){showToast('Failed','error');}
+}
+async function showCascade(id){
+  try{
+    const d=await apiFetch('/api/process/alarm_cascade/'+id);
+    document.getElementById('cascadePanel').style.display='block';
+    document.getElementById('cascadeTitle').textContent=`Cascade — ${d.deviation.wc_id}/${d.deviation.parameter_name}`;
+    document.getElementById('cascadeFlow').innerHTML=d.chain.map((s,i)=>{
+      const c=s.step.includes('NCR')?'var(--accent-red)':s.step.includes('Hold')?'var(--accent-yellow)':s.step.includes('Quarantine')?'#a855f7':'var(--accent-blue)';
+      return(i>0?'<span style="color:var(--accent-gold);font-size:16px">→</span>':'')+
+        `<div style="padding:6px 12px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid ${c}"><div style="font-weight:600;font-size:11px;color:${c}">${s.step}</div><div style="font-size:10px;color:var(--text-secondary)">${s.detail||''}</div></div>`;
+    }).join('');
+    document.getElementById('cascadePanel').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }catch(e){showToast('Could not load cascade','error');}
+}
+async function showScrap(id){
+  try{
+    const d=await apiFetch('/api/process/deviation_scrap/'+id);
+    if(d.nearby_scrap&&d.nearby_scrap.length) showToast(`${d.nearby_scrap.length} scrap event(s) ±30min: ${d.nearby_scrap.map(s=>s.quantity_ft+'ft '+s.cause_code).join(', ')}`,'info',6000);
+    else showToast('No scrap within ±30 minutes','info');
+  }catch(e){showToast('Error','error');}
+}
+
+/* ── Holds ────────────────────────────────────────────────────── */
+async function loadHolds(wc){
+  try{
+    const data=await apiFetch('/api/process/holds'+(wc?'?wc_id='+wc:''));
+    const tb=document.querySelector('#holdTable tbody');
+    tb.innerHTML=data.length?data.map(h=>{
+      const st=h.hold_status==='Active'?'red':'green';
+      return `<tr><td style="font-size:10px">${(h.held_date||'').substring(0,16)}</td><td>${h.wo_id||''}</td><td>${h.lot_number||''}</td><td style="font-size:11px">${h.hold_reason||''}</td><td><span class="badge badge-${st}" style="font-size:10px">${h.hold_status}</span></td><td>${h.released_date||'—'}</td></tr>`;
+    }).join(''):'<tr><td colspan="6" style="color:var(--text-muted)">No holds</td></tr>';
+  }catch(e){}
+}
+
+/* ── PID Simulation ───────────────────────────────────────────── */
+async function runPID(){
+  const b={kp:+document.getElementById('pidKp').value,ki:+document.getElementById('pidKi').value,kd:+document.getElementById('pidKd').value,setpoint:+document.getElementById('pidSP').value,duration:+document.getElementById('pidSteps').value};
+  try{
+    const d=await apiPost('/api/process/pid_simulate',b);
+    let lbl,act,sp,ctrl;
+    if(d.time_series){lbl=d.time_series.map(p=>p.t);act=d.time_series.map(p=>p.pv);sp=d.time_series.map(p=>p.sp);ctrl=d.time_series.map(p=>p.u||0);}
+    else{lbl=(d.actual_values||[]).map((_,i)=>i);act=d.actual_values||[];sp=Array(act.length).fill(b.setpoint);ctrl=d.control_outputs||[];}
+    if(pidObj)pidObj.destroy();
+    pidObj=new Chart(document.getElementById('pidChart'),{type:'line',data:{labels:lbl,datasets:[{label:'PV',data:act,borderColor:'#3b82f6',fill:false,tension:0.3,pointRadius:0,borderWidth:2},{label:'SP',data:sp,borderColor:'#ef4444',borderDash:[6,3],pointRadius:0,fill:false,borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+    if(pidCtrlObj)pidCtrlObj.destroy();
+    if(ctrl.length)pidCtrlObj=new Chart(document.getElementById('pidControlChart'),{type:'line',data:{labels:lbl,datasets:[{label:'u(t)',data:ctrl,borderColor:'#22c55e',fill:true,backgroundColor:'rgba(34,197,94,0.1)',tension:0.3,pointRadius:0,borderWidth:1.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+    const ss=act.length>10?act[act.length-1]:0,se=Math.abs(ss-b.setpoint),os=Math.max(...act)-b.setpoint;
+    document.getElementById('pidKPIs').innerHTML=`<div class="kpi-card blue"><div class="kpi-label">Steady-State</div><div class="kpi-value">${ss.toFixed(1)}</div></div><div class="kpi-card ${se<1?'green':'yellow'}"><div class="kpi-label">SS Error</div><div class="kpi-value">${se.toFixed(2)}</div></div><div class="kpi-card ${os<5?'green':'yellow'}"><div class="kpi-label">Overshoot</div><div class="kpi-value">${os.toFixed(1)}</div></div>`;
+    showToast('PID complete','success');
+  }catch(e){showToast('PID failed','error');}
+}
+
+/* ── Init ─────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded',async()=>{
+  try{
+    const wcs=await apiFetch('/api/process/work_centers');
+    const sel=document.getElementById('f8Wc');
+    wcs.forEach(w=>{const o=document.createElement('option');o.value=w.wc_id;o.textContent=`${w.wc_id} — ${w.name}`;sel.appendChild(o);});
+    // Auto-select first WC
+    if(wcs.length){sel.value=wcs[0].wc_id;loadMonitor();}
+    else{loadSummary('');}
+  }catch(e){loadSummary('');}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,144 @@
+{% extends "base.html" %}{% set active_page = "wirecable" %}
+{% block title %}Wire & Cable Ops — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Wire & Cable Operations</h1>
+<p class="page-subtitle">Reel management, spark testing, print marking verification, downtime, environmental</p>
+
+<div class="tab-bar" data-group="wc">
+ <button class="tab-btn active" data-tab="wc-production">Production Data</button>
+ <button class="tab-btn" data-tab="wc-env">Environmental</button>
+</div>
+
+<!-- Production Data Tab -->
+<div class="tab-content active" id="wc-production">
+ <div class="kpi-grid" id="productionKPIs"></div>
+
+ <div class="chart-card"><h3>Reel Inventory</h3>
+  <table class="data-table" id="reelTable"><thead><tr><th>Reel ID</th><th>Type</th><th>Product</th><th>WO</th><th>Footage (ft)</th><th>Status</th></tr></thead><tbody></tbody></table>
+ </div>
+
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Spark Test Results</div>
+ <div class="chart-card"><h3>Spark Test Results (inline 100% testing)</h3>
+  <table class="data-table" id="sparkTable"><thead><tr><th>Reel</th><th>WO</th><th>Voltage (kV)</th><th>Result</th><th>Fault Location (ft)</th><th>Time</th></tr></thead><tbody></tbody></table>
+ </div>
+
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Print Marking Verification</div>
+ <div class="kpi-grid" id="printKPIs"></div>
+ <div class="chart-card"><h3>Print Marking Verification Log</h3>
+  <p style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Wire marking: continuous printing of product ID, voltage rating, UL listing, manufacturer, footage marks onto cable jacket</p>
+  <table class="data-table" id="printTable">
+   <thead><tr><th>Product</th><th>Method</th><th>Color</th><th>Height</th><th>Legend</th><th>Legibility</th><th>Adhesion</th><th>Spacing</th><th>Status</th><th>Date</th></tr></thead>
+   <tbody></tbody>
+  </table>
+ </div>
+
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Downtime Log</div>
+ <div class="chart-card"><h3>Downtime Log</h3>
+  <table class="data-table" id="dtTable"><thead><tr><th>WC</th><th>Category</th><th>Duration (min)</th><th>Cause</th><th>Start</th></tr></thead><tbody></tbody></table>
+ </div>
+</div>
+
+<!-- Environmental Tab -->
+<div class="tab-content" id="wc-env">
+ <div class="chart-card"><h3>Environmental Readings (Extrusion Zones)</h3>
+  <table class="data-table" id="envTable"><thead><tr><th>WC</th><th>Temp (&deg;F)</th><th>Humidity (%)</th><th>Shift</th><th>Status</th><th>Time</th></tr></thead><tbody></tbody></table>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+async function loadWC() {
+  const [reelsRes, sparksRes, dtRes, env] = await Promise.all([
+    apiFetch('/api/wire-cable/reels'),
+    apiFetch('/api/wire-cable/spark-tests'),
+    apiFetch('/api/wire-cable/downtime'),
+    apiFetch('/api/wire-cable/environmental'),
+  ]);
+  const reels = Array.isArray(reelsRes) ? reelsRes : (reelsRes.data || []);
+  const sparks = Array.isArray(sparksRes) ? sparksRes : (sparksRes.data || []);
+  const dt = Array.isArray(dtRes) ? dtRes : (dtRes.data || []);
+
+  // Top-level KPIs for Production Data tab
+  const totalReels = reels.length;
+  const sparkPass = sparks.filter(s => s.result === 'PASS').length;
+  const sparkTotal = sparks.length;
+  const sparkRate = sparkTotal ? ((sparkPass / sparkTotal) * 100).toFixed(1) : 0;
+  const dtEvents = dt.length;
+
+  document.getElementById('productionKPIs').innerHTML = `
+    <div class="kpi-card blue"><div class="kpi-label">Total Reels</div><div class="kpi-value">${totalReels}</div></div>
+    <div class="kpi-card ${sparkRate >= 95 ? 'green' : sparkRate >= 85 ? 'yellow' : 'red'}"><div class="kpi-label">Spark Pass Rate</div><div class="kpi-value">${sparkRate}</div><span class="kpi-unit">%</span></div>
+    <div class="kpi-card blue"><div class="kpi-label">Print Pass Rate</div><div class="kpi-value">—</div><span class="kpi-unit">%</span></div>
+    <div class="kpi-card ${dtEvents > 0 ? 'yellow' : 'green'}"><div class="kpi-label">Downtime Events</div><div class="kpi-value">${dtEvents}</div></div>`;
+
+  // Reels
+  const sc = {Empty:'gray',InUse:'blue',Full:'green',Shipped:'gray',Returned:'yellow'};
+  document.querySelector('#reelTable tbody').innerHTML = reels.map(r =>
+    `<tr><td>${r.reel_id}</td><td>${r.reel_type_id}</td><td>${r.product_id||'-'}</td><td>${r.wo_id||'-'}</td><td class="number">${fmt(r.footage_ft)}</td><td><span class="badge badge-${sc[r.status]||'gray'}">${r.status}</span></td></tr>`
+  ).join('');
+
+  // Spark Tests
+  document.querySelector('#sparkTable tbody').innerHTML = sparks.slice(0,50).map(s => {
+    const rc = s.result === 'PASS' ? 'green' : 'red';
+    return `<tr><td>${s.reel_id||'-'}</td><td>${s.wo_id||'-'}</td><td class="number">${s.voltage_kv} kV</td><td><span class="badge badge-${rc}">${s.result}</span></td><td class="number">${s.footage_at_fault_ft||'-'}</td><td>${s.timestamp}</td></tr>`;
+  }).join('');
+
+  // Downtime
+  document.querySelector('#dtTable tbody').innerHTML = dt.map(d => {
+    const cat_color = d.category === 'Breakdown' ? 'red' : d.category === 'Setup' ? 'yellow' : 'blue';
+    return `<tr><td>${d.wc_id}</td><td><span class="badge badge-${cat_color}">${d.category}</span></td><td class="number">${d.duration_min}</td><td>${d.cause}</td><td>${d.start_time}</td></tr>`;
+  }).join('');
+
+  // Environmental
+  document.querySelector('#envTable tbody').innerHTML = env.slice(0,50).map(e => {
+    const sc2 = e.status === 'Alarm' ? 'red' : e.status === 'Warning' ? 'yellow' : 'green';
+    return `<tr><td>${e.wc_id}</td><td class="number">${e.temperature_f}</td><td class="number">${e.humidity_pct}</td><td>${e.shift}</td><td><span class="badge badge-${sc2}">${e.status}</span></td><td>${e.timestamp}</td></tr>`;
+  }).join('');
+
+  // Print Marking
+  loadPrintMarking();
+}
+
+async function loadPrintMarking() {
+  const [marks, summary] = await Promise.all([
+    apiFetch('/api/wire-cable/print-marking'),
+    apiFetch('/api/wire-cable/print-summary'),
+  ]);
+
+  // Update the Print Pass Rate KPI in the top-level cards
+  const prodKPIs = document.getElementById('productionKPIs');
+  const kpiCards = prodKPIs.querySelectorAll('.kpi-card');
+  if (kpiCards.length >= 3) {
+    const pr = summary.pass_rate;
+    const prColor = pr >= 95 ? 'green' : pr >= 85 ? 'yellow' : 'red';
+    kpiCards[2].className = `kpi-card ${prColor}`;
+    kpiCards[2].innerHTML = `<div class="kpi-label">Print Pass Rate</div><div class="kpi-value">${pr}</div><span class="kpi-unit">%</span>`;
+  }
+
+  // Print section KPI cards
+  const kpis = document.getElementById('printKPIs');
+  const pr = summary.pass_rate;
+  kpis.innerHTML = `
+    <div class="kpi-card ${pr >= 95 ? 'green' : pr >= 85 ? 'yellow' : 'red'}"><div class="kpi-label">Print Pass Rate</div><div class="kpi-value">${pr}</div><span class="kpi-unit">%</span></div>
+    <div class="kpi-card blue"><div class="kpi-label">Total Verified</div><div class="kpi-value">${summary.passed + summary.failed}</div></div>
+    <div class="kpi-card ${summary.failed > 0 ? 'red' : 'green'}"><div class="kpi-label">Print Failures</div><div class="kpi-value">${summary.failed}</div><div class="kpi-target">Leg: ${summary.failure_breakdown.legibility} | Adh: ${summary.failure_breakdown.adhesion} | Spc: ${summary.failure_breakdown.spacing}</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label">Pending</div><div class="kpi-value">${summary.pending}</div></div>
+  `;
+
+  // Print table
+  const pf = (v) => v === 1 ? '<span class="badge badge-green">PASS</span>' : v === 0 ? '<span class="badge badge-red">FAIL</span>' : '-';
+  document.querySelector('#printTable tbody').innerHTML = marks.slice(0,40).map(m => {
+    const vc = m.verification_status === 'Pass' ? 'green' : m.verification_status === 'Fail' ? 'red' : 'yellow';
+    return `<tr>
+      <td>${m.product_id}</td><td>${m.print_method}</td><td>${m.color}</td>
+      <td class="number">${m.character_height_mm}mm</td>
+      <td style="font-size:11px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${m.print_legend}">${m.print_legend}</td>
+      <td>${pf(m.legibility_pass)}</td><td>${pf(m.adhesion_pass)}</td><td>${pf(m.spacing_pass)}</td>
+      <td><span class="badge badge-${vc}">${m.verification_status}</span></td>
+      <td>${m.timestamp||'-'}</td>
+    </tr>`;
+  }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', loadWC);
+</script>{% endblock %}

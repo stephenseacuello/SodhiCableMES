@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}SodhiCable MES{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mes.css') }}">
+<script src="{{ url_for('static', filename='vendor/chart.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/chartjs-plugin-annotation.min.js') }}"></script>
+<style>
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #000;
+    color: #fff;
+    padding: 8px;
+    z-index: 100;
+    transition: top 0.3s;
+}
+.skip-link:focus {
+    top: 0;
+}
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<nav class="sidebar" role="navigation" aria-label="Main navigation">
+ <div class="sidebar-header" style="position:relative">
+  <h2 style="display:inline">SodhiCable</h2>
+  <button onclick="toggleNotifications()" title="Notifications" aria-label="Toggle notifications"
+          style="position:absolute;right:12px;top:12px;background:none;border:none;cursor:pointer;font-size:18px;padding:4px;line-height:1">
+   <span aria-hidden="true">🔔</span><span class="sr-only">Notifications</span><span id="notifBadgeTop" style="display:none;position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700">0</span>
+  </button>
+  <br><span class="sidebar-subtitle">MES v4.0 — Flask</span>
+ </div>
+ <!-- Notification Panel (dropdown from header bell) -->
+ <div id="notifPanel" style="display:none;position:absolute;top:56px;left:12px;right:12px;max-height:400px;overflow-y:auto;
+      background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);z-index:300;padding:10px">
+  <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center">
+   <span>Notifications</span>
+   <span id="notifCountLabel" style="color:var(--accent-gold)"></span>
+  </div>
+  <div id="notifList"></div>
+ </div>
+ <!-- Global Search -->
+ <div style="padding:6px 12px;position:relative">
+  <label for="globalSearch" class="sr-only">Search work orders, products, and equipment</label>
+  <input type="text" id="globalSearch" placeholder="Search WOs, products, equipment..."
+         style="width:100%;padding:6px 10px;font-size:11px;border-radius:6px;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary)"
+         oninput="debounceSearch(this.value)" autocomplete="off">
+  <div id="searchResults" style="display:none;position:absolute;left:12px;right:12px;z-index:200;
+       max-height:400px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border-color);
+       border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px;padding:8px"></div>
+ </div>
+ <div class="nav-section" style="padding-bottom:4px">
+  <a href="/demo" class="nav-link {% if active_page=='demo' %}active{% endif %}" style="background:rgba(245,158,11,0.15);border-left-color:var(--accent-gold);font-weight:600"><span class="nav-icon">▶</span> Run Demo</a>
+ </div>
+ <div class="nav-section"><span class="nav-section-label">Dashboards</span>
+  <a href="/" class="nav-link {% if active_page=='dashboard' %}active{% endif %}"><span class="nav-icon">📊</span> Dashboard</a>
+  <a href="/executive" class="nav-link {% if active_page=='executive' %}active{% endif %}"><span class="nav-icon">🏢</span> Executive</a>
+  <a href="/erp" class="nav-link {% if active_page=='erp' %}active{% endif %}" style="{% if active_page=='erp' %}background:rgba(59,130,246,0.15){% endif %}"><span class="nav-icon">L4</span> ERP (Level 4)</a>
+  <a href="/scada" class="nav-link {% if active_page=='scada' %}active{% endif %}"><span class="nav-icon">📡</span> SCADA (ISA-95)</a>
+  <a href="/ai" class="nav-link {% if active_page=='ai' %}active{% endif %}"><span class="nav-icon">🤖</span> AI Insights</a>
+ </div>
+ <div class="nav-section"><span class="nav-section-label">MESA-11 Functions</span>
+  <a href="/resources" class="nav-link {% if active_page=='resources' %}active{% endif %}"><span class="nav-icon">F1</span> Resource Allocation</a>
+  <a href="/scheduling" class="nav-link {% if active_page=='scheduling' %}active{% endif %}"><span class="nav-icon">F2</span> Scheduling</a>
+  <a href="/dispatch" class="nav-link {% if active_page=='dispatch' %}active{% endif %}"><span class="nav-icon">F3</span> Dispatching</a>
+  <a href="/documents" class="nav-link {% if active_page=='documents' %}active{% endif %}"><span class="nav-icon">F4</span> Document Control</a>
+  <a href="/datacollect" class="nav-link {% if active_page=='datacollect' %}active{% endif %}"><span class="nav-icon">F5</span> Data Collection</a>
+  <a href="/labor" class="nav-link {% if active_page=='labor' %}active{% endif %}"><span class="nav-icon">F6</span> Labor Mgmt</a>
+  <a href="/quality" class="nav-link {% if active_page=='quality' %}active{% endif %}"><span class="nav-icon">F7</span> Quality / SPC</a>
+  <a href="/process" class="nav-link {% if active_page=='process' %}active{% endif %}"><span class="nav-icon">F8</span> Process Control</a>
+  <a href="/equipment" class="nav-link {% if active_page=='equipment' %}active{% endif %}"><span class="nav-icon">F9</span> Maintenance</a>
+  <a href="/traceability" class="nav-link {% if active_page=='traceability' %}active{% endif %}"><span class="nav-icon">F10</span> Traceability</a>
+  <a href="/performance" class="nav-link {% if active_page=='performance' %}active{% endif %}"><span class="nav-icon">F11</span> Performance</a>
+ </div>
+ <div class="nav-section"><span class="nav-section-label">Operations</span>
+  <a href="/workorders" class="nav-link {% if active_page=='workorders' %}active{% endif %}"><span class="nav-icon">📋</span> Work Orders</a>
+  <a href="/wire-cable" class="nav-link {% if active_page=='wirecable' %}active{% endif %}"><span class="nav-icon">🔌</span> Wire & Cable</a>
+ </div>
+ <div class="nav-section"><span class="nav-section-label">Analytics</span>
+  <a href="/des" class="nav-link {% if active_page=='des' %}active{% endif %}"><span class="nav-icon">⚙️</span> DES Simulation</a>
+  <a href="/bottleneck" class="nav-link {% if active_page=='bottleneck' %}active{% endif %}"><span class="nav-icon">🔍</span> Bottleneck</a>
+ </div>
+ <div class="nav-section"><span class="nav-section-label">Simulation</span>
+  <a href="/simulation" class="nav-link {% if active_page=='simulation' %}active{% endif %}"><span class="nav-icon">🏭</span> Factory Floor</a>
+ </div>
+ <div class="nav-section"><span class="nav-section-label">Info</span>
+  <a href="/about" class="nav-link {% if active_page=='about' %}active{% endif %}"><span class="nav-icon">ℹ️</span> About SodhiCable</a>
+  <a href="/system" class="nav-link {% if active_page=='system' %}active{% endif %}"><span class="nav-icon">🔧</span> System Metrics</a>
+ </div>
+ <div class="sidebar-footer">
+  <button onclick="startTour(document.body.dataset.tour || 'dashboard')" class="theme-toggle" title="Start guided tour" aria-label="Start guided tour">?</button>
+  <button onclick="toggleTheme()" class="theme-toggle" title="Toggle theme" aria-label="Toggle light and dark theme">☀/🌙</button>
+  <button onclick="window.print()" class="btn-print no-print" title="Print" aria-label="Print page" style="margin-left:4px">Print</button>
+  <br><span class="last-updated" id="lastUpdated" style="margin-top:6px;display:inline-block">Updated: --</span>
+ </div>
+</nav>
+<main class="main-content" id="main-content">
+ <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+ {% block content %}{% endblock %}
+</main>
+<script src="{{ url_for('static', filename='js/mes-common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tour.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% set active_page = "traceability" %}
+{% block title %}Traceability — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F10 — Product Tracking &amp; Genealogy</h1>
+<p class="page-subtitle">Forward and backward lot trace — 8-tier genealogy: RAW → COMPOUND → WIRE → INSULATED → SHIELDED → CABLED → JACKETED → CUT/REEL</p>
+
+<!-- KPIs -->
+<div class="kpi-grid" id="traceKPIs">
+ <div class="kpi-card blue"><div class="kpi-label">Lot Records</div><div class="kpi-value" id="kpiLotCount">—</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Unique Lots</div><div class="kpi-value" id="kpiUniqueLots">—</div></div>
+ <div class="kpi-card"><div class="kpi-label">Splice Zones</div><div class="kpi-value" id="kpiSplices">—</div></div>
+ <div class="kpi-card"><div class="kpi-label">Regrind Records</div><div class="kpi-value" id="kpiRegrind">—</div></div>
+ <div class="kpi-card blue"><div class="kpi-label">Linked Reels</div><div class="kpi-value" id="kpiReels">—</div></div>
+</div>
+
+<div class="control-panel">
+  <div class="control-row">
+    <div class="control-group">
+      <label for="lotSelect">Lot Number</label>
+      <select id="lotSelect"><option value="">Select lot...</option></select>
+    </div>
+    <div class="control-group">
+      <label for="lotInput">Or type lot</label>
+      <input type="text" id="lotInput" placeholder="e.g. LOT-2026-0412">
+    </div>
+    <div class="control-group" style="align-self:flex-end">
+      <button class="btn btn-primary" id="btnForward">Trace Forward</button>
+      <button class="btn" id="btnBackward">Trace Backward</button>
+    </div>
+  </div>
+</div>
+
+<h2>Trace Results</h2>
+<div style="margin-bottom:8px;display:flex;gap:8px">
+  <button class="btn" id="viewTreeBtn" onclick="setTraceView('tree')" style="font-size:11px;font-weight:600">Tree View</button>
+  <button class="btn" id="viewGraphBtn" onclick="setTraceView('graph')" style="font-size:11px">Graph View</button>
+</div>
+<div id="traceTree" style="font-family:monospace;padding:1rem;background:var(--bg-card,#fff);border-radius:8px;min-height:80px">
+  Enter a lot number and click Trace.
+</div>
+<div id="traceGraph" style="display:none;padding:16px;background:var(--bg-card);border-radius:8px;min-height:200px;overflow-x:auto">
+  <p style="color:var(--text-muted)">Run a trace to see the visual genealogy graph.</p>
+</div>
+
+<div class="chart-card" style="margin:20px 0;border-left:4px solid var(--accent-yellow)">
+ <h3 style="color:var(--accent-yellow)">Genealogy Complexity Notes</h3>
+ <p style="color:var(--text-secondary);font-size:13px;line-height:1.7;margin-top:8px">
+  Lot traceability in wire & cable manufacturing is inherently complex due to several edge cases
+  that this system handles via recursive Common Table Expressions (CTEs) with a depth limit of 10 tiers:
+ </p>
+ <ul style="color:var(--text-secondary);font-size:13px;line-height:1.9;margin-left:20px;margin-top:8px">
+  <li><strong>Circular references (rework loops):</strong> A defective lot may be reworked and re-enter the process as input to a new lot, creating a cycle. The depth limit prevents infinite recursion.</li>
+  <li><strong>Partial consumption:</strong> A single input lot (e.g., compound batch CB-0330) may be split across multiple output lots on different extrusion lines, creating a one-to-many fan-out.</li>
+  <li><strong>Blended lots:</strong> Multiple input materials (copper, insulation, shield) combine into a single cable lot — a many-to-one convergence requiring backward trace through all branches.</li>
+  <li><strong>Multi-tier depth:</strong> Raw material (copper rod) → drawn wire → insulated conductor → shielded assembly → jacketed cable → cut lengths → reels. Each tier is a separate lot_tracking record.</li>
+  <li><strong>Cross-WC genealogy:</strong> A lot passes through 8-10 work centers (COMPOUND → DRAW → CV → BRAID → CABLE → JACKET → TEST → CUT), each creating new lot relationships.</li>
+  <li><strong>Splice zone ownership:</strong> When conductor payoffs are spliced on the stranding line, the splice zone (typically 2-5 feet) inherits properties of both parent lots. For MIL-SPEC products, splice zones are marked, documented, and may require customer acceptance. Our model tracks splice events as special lot_tracking records with tier_level='Splice'.</li>
+  <li><strong>Regrind/blend-back tracing:</strong> Scrap PVC compound is reground by weight and blended into new insulation batches (max 10% regrind per ASTM D2287). Genealogy must track mass fraction: if Lot A contributes 8% regrind to Lot B, and Lot B is later recalled, Lot A's source material must be traceable. Our lot_tracking model supports this via qty_consumed (weight-based) + tier_level='Regrind'.</li>
+  <li><strong>Remnant inheritance:</strong> When a 1,000 ft reel is cut to customer order (e.g., 950 ft shipped + 50 ft remnant), the remnant lot inherits all quality certifications and test results from the parent. Remnants below minimum order quantity are downgraded to stock or scrapped. Our reel_inventory tracks remnants via status='Remnant' with parent reel reference.</li>
+ </ul>
+ <p style="color:var(--text-muted);font-size:12px;margin-top:8px">
+  Performance target: Full backward trace from finished reel to raw material in &lt;10 seconds.
+  Current implementation uses SQLite recursive CTEs with indexed output_lot and input_lot columns.
+ </p>
+</div>
+
+<h2>Reel Inventory</h2>
+<table class="data-table" id="reelTable">
+  <thead><tr><th>Reel ID</th><th>Lot</th><th>Product</th><th>Footage</th><th>Location</th><th>Status</th></tr></thead>
+  <tbody></tbody>
+</table>
+{% endblock %}
+{% block scripts %}
+<script>
+function renderTree(node, depth=0) {
+  const pad = '&nbsp;'.repeat(depth*4);
+  let html = `<div>${pad}${depth?'└─ ':''}${node.label}</div>`;
+  (node.children||[]).forEach(c => html += renderTree(c, depth+1));
+  return html;
+}
+function buildTreeFromTrace(lot, rows, direction) {
+  if(!rows || rows.length === 0) return null;
+  // Build a simple tree from flat trace rows
+  const root = {label: `Lot: ${lot}`, children: []};
+  const byDepth = {};
+  rows.forEach(r => {
+    const depth = r.depth || 0;
+    if(!byDepth[depth]) byDepth[depth] = [];
+    const label = direction === 'forward'
+      ? `${r.output_lot} (WO: ${r.wo_id||'?'}, Op: ${r.operation_id||'?'})`
+      : `${r.input_lot||r.output_lot} (WO: ${r.wo_id||'?'}, Op: ${r.operation_id||'?'})`;
+    byDepth[depth].push({label, children: []});
+  });
+  // Attach depth-0 to root
+  root.children = byDepth[0] || [];
+  // Attach deeper levels
+  const depths = Object.keys(byDepth).map(Number).sort();
+  for(let i = 1; i < depths.length; i++) {
+    const parents = byDepth[depths[i-1]] || [];
+    const children = byDepth[depths[i]] || [];
+    // Distribute children among parents (simple round-robin)
+    children.forEach((c, idx) => {
+      const parent = parents[idx % parents.length];
+      if(parent) parent.children.push(c);
+    });
+  }
+  return root;
+}
+async function loadLots() {
+  try {
+    const res = await fetch('/api/traceability/lots');
+    const d = await res.json();
+    const sel = document.getElementById('lotSelect');
+    (d.lots||[]).forEach(lot => {
+      if(!lot) return;
+      const o = document.createElement('option');
+      o.value = lot; o.textContent = lot; sel.appendChild(o);
+    });
+  } catch(e) { console.warn('Could not load lots:', e); }
+}
+function getLot() {
+  const typed = document.getElementById('lotInput').value.trim();
+  const selected = document.getElementById('lotSelect').value;
+  return typed || selected;
+}
+async function trace(direction) {
+  const lot = getLot();
+  if(!lot) return alert('Select or enter a lot number');
+  const res = await fetch(`/api/traceability/trace?lot=${encodeURIComponent(lot)}&direction=${direction}`);
+  const d = await res.json();
+  // API returns {trace: [...]} flat list, not a tree
+  const tree = d.tree ? d.tree : buildTreeFromTrace(lot, d.trace, direction);
+  document.getElementById('traceTree').innerHTML = tree ? renderTree(tree) : 'No results found.';
+  // Load reels for this lot
+  try {
+    const reelRes = await fetch('/api/traceability/reels');
+    const reelJson = await reelRes.json();
+    const reels = Array.isArray(reelJson) ? reelJson : (reelJson.data || []);
+    const filtered = reels.filter(r => r.lot_number === lot || r.output_lot === lot);
+    const all = filtered.length > 0 ? filtered : reels.slice(0, 20);
+    const tb = document.getElementById('reelTable').querySelector('tbody');
+    tb.innerHTML = all.map(r =>
+      `<tr><td>${r.reel_id||''}</td><td>${r.lot_number||''}</td><td>${r.product_id||''}</td><td>${r.footage_ft||''}</td><td>${r.location||''}</td><td>${r.status||''}</td></tr>`).join('');
+  } catch(e) { console.warn('Reels not available:', e); }
+  // Also load graph view
+  loadGraph(lot, direction);
+}
+let traceView = 'tree';
+function setTraceView(v) {
+  traceView = v;
+  document.getElementById('traceTree').style.display = v === 'tree' ? 'block' : 'none';
+  document.getElementById('traceGraph').style.display = v === 'graph' ? 'block' : 'none';
+  document.getElementById('viewTreeBtn').style.fontWeight = v === 'tree' ? '600' : '400';
+  document.getElementById('viewGraphBtn').style.fontWeight = v === 'graph' ? '600' : '400';
+}
+
+async function loadGraph(lot, direction) {
+  try {
+    const d = await apiFetch(`/api/traceability/graph?lot=${encodeURIComponent(lot)}&direction=${direction}`);
+    const container = document.getElementById('traceGraph');
+    if (!d.nodes || !d.nodes.length) { container.innerHTML = '<p style="color:var(--text-muted)">No genealogy data</p>'; return; }
+
+    const tierColors = {Root:'#3b82f6', Raw:'#3b82f6', Input:'#64748b', Semi:'#eab308', Finished:'#22c55e', Reel:'#a855f7', Splice:'#ef4444', Regrind:'#f59e0b', Unknown:'#94a3b8'};
+
+    // Group nodes by depth
+    const byDepth = {};
+    d.nodes.forEach(n => {
+      const dep = n.depth >= 0 ? n.depth : 0;
+      if (!byDepth[dep]) byDepth[dep] = [];
+      byDepth[dep].push(n);
+    });
+    const depths = Object.keys(byDepth).map(Number).sort();
+
+    // Render as layered columns
+    let html = '<div style="display:flex;gap:32px;align-items:flex-start;min-width:' + (depths.length * 180) + 'px">';
+    depths.forEach((dep, colIdx) => {
+      html += '<div style="display:flex;flex-direction:column;gap:8px;min-width:150px">';
+      html += `<div style="font-size:9px;text-transform:uppercase;color:var(--text-muted);text-align:center;letter-spacing:1px">Tier ${dep}</div>`;
+      byDepth[dep].forEach(n => {
+        const color = tierColors[n.tier] || '#94a3b8';
+        html += `<div style="padding:8px 12px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid ${color};font-size:12px">
+          <strong style="color:${color}">${n.label}</strong>
+          <div style="font-size:10px;color:var(--text-muted)">${n.tier || ''}${n.wo_id ? ' / '+n.wo_id : ''}</div>
+        </div>`;
+      });
+      if (colIdx < depths.length - 1) {
+        html += '</div><div style="display:flex;align-items:center;color:var(--accent-gold);font-size:20px;padding-top:20px">\u2192</div>';
+      } else {
+        html += '</div>';
+      }
+    });
+    html += '</div>';
+
+    // Edge count summary
+    html += `<div style="margin-top:12px;font-size:11px;color:var(--text-muted)">${d.nodes.length} nodes, ${d.edges.length} edges</div>`;
+    container.innerHTML = html;
+  } catch(e) { document.getElementById('traceGraph').innerHTML = '<p style="color:var(--text-muted)">Error loading graph</p>'; }
+}
+
+document.getElementById('btnForward').addEventListener('click', () => trace('forward'));
+document.getElementById('btnBackward').addEventListener('click', () => trace('backward'));
+document.getElementById('lotSelect').addEventListener('change', function() {
+  document.getElementById('lotInput').value = this.value;
+});
+
+async function loadTraceKPIs() {
+  try {
+    const lots = await apiFetch('/api/traceability/lots');
+    const lotList = lots.lots || [];
+    document.getElementById('kpiUniqueLots').textContent = lotList.length;
+
+    // Count lot_tracking records via a raw material trace (proxy)
+    const splices = await apiFetch('/api/traceability/splice_zones');
+    document.getElementById('kpiSplices').textContent = (splices.splice_zones || splices || []).length;
+
+    const cycles = await apiFetch('/api/traceability/cycle_check');
+    document.getElementById('kpiRegrind').textContent = (cycles.cycles || []).length;
+
+    const reelsRes = await apiFetch('/api/traceability/reels');
+    const reelsList = Array.isArray(reelsRes) ? reelsRes : (reelsRes.data || []);
+    document.getElementById('kpiReels').textContent = reelsList.length;
+    document.getElementById('kpiLotCount').textContent = lotList.length > 0 ? '8-tier' : '—';
+  } catch(e) {}
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadLots();
+  loadTraceKPIs();
+  // Auto-run a default trace so the page isn't empty
+  const sel = document.getElementById('lotSelect');
+  if (sel.options.length > 1) {
+    // Pick a raw material to show full forward trace
+    const rawLot = [...sel.options].find(o => o.value.startsWith('RAW-') || o.value.startsWith('MAT-'));
+    if (rawLot) {
+      document.getElementById('lotInput').value = rawLot.value;
+      sel.value = rawLot.value;
+      trace('forward');
+    }
+  }
+});
+</script>
+{% endblock %}

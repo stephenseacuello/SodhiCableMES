@@ -1,0 +1,1595 @@
+openapi: 3.0.3
+info:
+  title: SodhiCable MES v4.0 API
+  description: |
+    REST API for the SodhiCable Manufacturing Execution System.
+
+    Aligned with **MESA-11** (Manufacturing Enterprise Solutions Association) functional
+    model and the **ISA-95** (IEC 62264) enterprise-control integration standard.
+
+    The API spans ISA-95 Levels 1-4:
+    - **Level 1-2** - Process control, sensors, equipment monitoring
+    - **Level 3** - MES core: work orders, scheduling, quality, traceability, performance, labor
+    - **Level 4** - ERP integration: S&OP, purchase orders, order-to-cash, ISA-95 messaging
+    - **Cross-Level** - AI/ML intelligence layer (proposed MESA F12)
+
+    All responses use JSON. Paginated endpoints return an envelope with
+    `{data, page, per_page, total}`.
+  version: 4.0.0
+  contact:
+    name: Stephen Eacuello
+    email: seacuello@uri.edu
+  license:
+    name: Academic Use
+
+servers:
+  - url: http://localhost:5000
+    description: Local development
+
+tags:
+  - name: "Level 3 - F1 Resource Allocation"
+    description: Work order CRUD, status management, and resource tracking (MESA F1)
+  - name: "Level 3 - F2 Scheduling"
+    description: Operations scheduling, solver dispatch, and Gantt support (MESA F2)
+  - name: "Level 3 - F7 Quality"
+    description: SPC control charts, Cpk capability, NCR management, scrap tracking (MESA F7)
+  - name: "Level 3 - F10 Traceability"
+    description: Lot genealogy, certificate of compliance, reel inventory (MESA F10)
+  - name: "Level 3 - F11 Performance"
+    description: OEE, KPIs, scrap Pareto, schedule adherence, energy efficiency (MESA F11)
+  - name: "Level 2 - Equipment"
+    description: Equipment status, downtime logging, MTBF, predictive maintenance (ISA-95 L2)
+  - name: "Level 1-2 - Process Control"
+    description: Live process data, alarms, PID simulation, deviation management (ISA-95 L1-L2)
+  - name: "Level 4 - ERP"
+    description: S&OP, purchase orders, order-to-cash, ISA-95 messaging, financials (ISA-95 L4)
+  - name: "Cross-Level - AI/ML"
+    description: Anomaly detection, predictive maintenance, recommendations (proposed MESA F12)
+  - name: "System"
+    description: Health checks, notifications, global search, audit trail, system metrics
+
+paths:
+  # ====================================================================
+  # System
+  # ====================================================================
+  /api/health:
+    get:
+      tags: ["System"]
+      summary: Health check
+      description: Returns system health status, database connectivity, and response time.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: System health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded]
+                  db_connected:
+                    type: boolean
+                  work_order_count:
+                    type: integer
+                  response_time_ms:
+                    type: number
+                  version:
+                    type: string
+              example:
+                status: healthy
+                db_connected: true
+                work_order_count: 145
+                response_time_ms: 2.3
+                version: "4.0"
+
+  /api/notifications:
+    get:
+      tags: ["System"]
+      summary: Notification center
+      description: |
+        Aggregates actionable notifications across all modules: critical alarms,
+        overdue PMs, late work orders, expiring certifications, and active holds.
+        Items are sorted by severity (critical first).
+      operationId: getNotifications
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [alarm, pm, late, cert, hold]
+                        severity:
+                          type: string
+                          enum: [critical, warning, info]
+                        title:
+                          type: string
+                        link:
+                          type: string
+                        ts:
+                          type: string
+                          nullable: true
+
+  /api/search:
+    get:
+      tags: ["System"]
+      summary: Global search
+      description: |
+        Full-text search across work orders, products, equipment, personnel,
+        and lots. Returns up to 5 results per category.
+      operationId: globalSearch
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query string (min 2 characters)
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+      responses:
+        "200":
+          description: Search results grouped by category
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  total:
+                    type: integer
+                  results:
+                    type: object
+                    properties:
+                      work_orders:
+                        type: array
+                        items:
+                          type: object
+                      products:
+                        type: array
+                        items:
+                          type: object
+                      equipment:
+                        type: array
+                        items:
+                          type: object
+                      personnel:
+                        type: array
+                        items:
+                          type: object
+                      lots:
+                        type: array
+                        items:
+                          type: object
+
+  # ====================================================================
+  # Level 3 - F1 Resource Allocation (Work Orders)
+  # ====================================================================
+  /api/workorders/list:
+    get:
+      tags: ["Level 3 - F1 Resource Allocation"]
+      summary: List work orders (paginated)
+      description: |
+        Returns paginated work orders with product details, ordered by due date ascending.
+        Supports standard pagination via `page` and `per_page` query parameters.
+      operationId: listWorkOrders
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/per_page"
+      responses:
+        "200":
+          description: Paginated work order list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/WorkOrder"
+
+  /api/workorders/create:
+    post:
+      tags: ["Level 3 - F1 Resource Allocation"]
+      summary: Create a new work order
+      description: |
+        Creates a work order with auto-generated WO ID and lot number.
+        Validates that the product exists and quantity is positive.
+        Logs creation to the audit trail.
+      operationId: createWorkOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_id]
+              properties:
+                product_id:
+                  type: string
+                  description: Must reference an existing product
+                wo_id:
+                  type: string
+                  description: Optional; auto-generated if omitted (WO-2026-NNN)
+                order_qty_kft:
+                  type: number
+                  description: Order quantity in thousands of feet
+                due_date:
+                  type: string
+                  format: date
+                priority:
+                  type: integer
+                  default: 3
+                  minimum: 1
+                  maximum: 5
+                business_unit:
+                  type: string
+                  default: Industrial
+            example:
+              product_id: "PROD-A-001"
+              order_qty_kft: 25.0
+              due_date: "2026-05-15"
+              priority: 2
+              business_unit: "Industrial"
+      responses:
+        "200":
+          description: Work order created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  wo_id:
+                    type: string
+                  lot_number:
+                    type: string
+              example:
+                ok: true
+                wo_id: "WO-2026-146"
+                lot_number: "LOT-2026-0301"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/workorders/{wo_id}:
+    get:
+      tags: ["Level 3 - F1 Resource Allocation"]
+      summary: Work order detail
+      description: |
+        Returns comprehensive work order detail including operations, quality
+        records (NCRs), test results, lot genealogy, scrap, holds, and audit trail.
+      operationId: getWorkOrder
+      parameters:
+        - name: wo_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "WO-2026-001"
+      responses:
+        "200":
+          description: Full work order detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  work_order:
+                    $ref: "#/components/schemas/WorkOrder"
+                  operations:
+                    type: array
+                    items:
+                      type: object
+                  quality:
+                    type: array
+                    items:
+                      type: object
+                  tests:
+                    type: array
+                    items:
+                      type: object
+                  lots:
+                    type: array
+                    items:
+                      type: object
+                  scrap:
+                    type: array
+                    items:
+                      type: object
+                  holds:
+                    type: array
+                    items:
+                      type: object
+                  audit:
+                    type: array
+                    items:
+                      type: object
+        "404":
+          description: Work order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/workorders/update_status:
+    post:
+      tags: ["Level 3 - F1 Resource Allocation"]
+      summary: Update work order status
+      description: |
+        Transitions a work order to a new status. Sets `actual_start` when
+        moving to InProcess and `actual_end` when moving to Complete.
+        Valid statuses: Pending, InProcess, Complete, On Hold, Cancelled.
+      operationId: updateWorkOrderStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wo_id, status]
+              properties:
+                wo_id:
+                  type: string
+                status:
+                  type: string
+                  enum: [Pending, InProcess, Complete, On Hold, Cancelled]
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  wo_id:
+                    type: string
+                  status:
+                    type: string
+
+  # ====================================================================
+  # Level 3 - F2 Scheduling
+  # ====================================================================
+  /api/scheduling/current:
+    get:
+      tags: ["Level 3 - F2 Scheduling"]
+      summary: Current production schedule
+      description: |
+        Returns the current schedule with WC assignments, cumulative start/end
+        times, setup/processing durations, and product details.
+        Supports filtering by work center and work order.
+      operationId: getCurrentSchedule
+      parameters:
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+          description: Filter by work center ID
+        - name: wo_id
+          in: query
+          schema:
+            type: string
+          description: Filter by work order ID
+      responses:
+        "200":
+          description: Schedule entries with timing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        wo_id:
+                          type: string
+                        wc_id:
+                          type: string
+                        wc_name:
+                          type: string
+                        product_id:
+                          type: string
+                        setup_min:
+                          type: number
+                        proc_min:
+                          type: number
+                        start_min:
+                          type: number
+                        end_min:
+                          type: number
+                        sequence:
+                          type: integer
+                  work_centers:
+                    type: array
+                    items:
+                      type: string
+                  work_orders:
+                    type: array
+                    items:
+                      type: string
+                  total:
+                    type: integer
+
+  /api/scheduling/solve:
+    post:
+      tags: ["Level 3 - F2 Scheduling"]
+      summary: Run scheduling solver
+      description: |
+        Dispatches a scheduling optimization solver. Supports 11 solver types
+        including LP relaxation, integer programming, Johnson's sequencing,
+        job shop, flow shop, stochastic, and multi-objective formulations.
+      operationId: runSchedulingSolver
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                solver:
+                  type: string
+                  enum: [p1, p2, p3, p4, p5, p5_neh, p6, p7, p8, p9, p10, p11]
+                  default: p1
+                  description: Solver ID from /api/scheduling/solvers
+            example:
+              solver: p2
+      responses:
+        "200":
+          description: Solver result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  solver:
+                    type: string
+                  result:
+                    type: object
+
+  # ====================================================================
+  # Level 3 - F7 Quality
+  # ====================================================================
+  /api/quality/spc:
+    get:
+      tags: ["Level 3 - F7 Quality"]
+      summary: SPC control chart data
+      description: |
+        Returns SPC readings with dynamically computed control limits (UCL, CL, LCL)
+        based on 3-sigma. Filterable by work center and parameter name.
+      operationId: getSpcData
+      parameters:
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+          description: Filter by work center
+        - name: parameter
+          in: query
+          schema:
+            type: string
+          description: Filter by parameter name (e.g., wall_thickness, diameter)
+      responses:
+        "200":
+          description: SPC readings with control limits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  readings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        spc_id:
+                          type: integer
+                        wc_id:
+                          type: string
+                        parameter_name:
+                          type: string
+                        measured_value:
+                          type: number
+                        measurement_date:
+                          type: string
+                        status:
+                          type: string
+                  ucl:
+                    type: number
+                    description: Upper control limit (mean + 3 sigma)
+                  cl:
+                    type: number
+                    description: Center line (mean)
+                  lcl:
+                    type: number
+                    description: Lower control limit (mean - 3 sigma)
+                  count:
+                    type: integer
+
+  /api/quality/cpk:
+    get:
+      tags: ["Level 3 - F7 Quality"]
+      summary: Process capability (Cpk)
+      description: |
+        Computes Cp and Cpk per work-center/parameter combination.
+        Cpk >= 1.33 is CAPABLE, >= 1.0 is MARGINAL, below is NEEDS IMPROVEMENT.
+      operationId: getCpk
+      parameters:
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+        - name: parameter
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cpk results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cpk_results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        wc_id:
+                          type: string
+                        parameter:
+                          type: string
+                        n_samples:
+                          type: integer
+                        mean:
+                          type: number
+                        sigma:
+                          type: number
+                        usl:
+                          type: number
+                        lsl:
+                          type: number
+                        cp:
+                          type: number
+                        cpk:
+                          type: number
+                        status:
+                          type: string
+                          enum: [CAPABLE, MARGINAL, NEEDS IMPROVEMENT]
+
+  /api/quality/ncr:
+    get:
+      tags: ["Level 3 - F7 Quality"]
+      summary: List non-conformance reports (paginated)
+      description: Returns paginated NCR records ordered by report date descending.
+      operationId: listNcrs
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/per_page"
+      responses:
+        "200":
+          description: Paginated NCR list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            ncr_id:
+                              type: integer
+                            product_id:
+                              type: string
+                            wo_id:
+                              type: string
+                            defect_type:
+                              type: string
+                            severity:
+                              type: string
+                            status:
+                              type: string
+
+  /api/quality/ncr/create:
+    post:
+      tags: ["Level 3 - F7 Quality"]
+      summary: Create a non-conformance report
+      description: |
+        Creates an NCR record with an initial status of Open.
+        Logs creation in the audit trail.
+      operationId: createNcr
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [defect_type]
+              properties:
+                defect_type:
+                  type: string
+                product_id:
+                  type: string
+                wo_id:
+                  type: string
+                lot_number:
+                  type: string
+                description:
+                  type: string
+                severity:
+                  type: string
+                  enum: [Minor, Major, Critical]
+                  default: Minor
+                detected_at:
+                  type: string
+                  description: Work center where defect was detected
+            example:
+              defect_type: "Wall Thickness OOC"
+              wo_id: "WO-2026-042"
+              severity: "Major"
+              detected_at: "CV-1"
+      responses:
+        "200":
+          description: NCR created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  ncr_id:
+                    type: integer
+
+  # ====================================================================
+  # Level 3 - F11 Performance
+  # ====================================================================
+  /api/performance/oee:
+    get:
+      tags: ["Level 3 - F11 Performance"]
+      summary: OEE by shift report
+      description: |
+        Returns OEE breakdown (availability, performance, quality, overall)
+        per work center and shift, ordered by date descending.
+      operationId: getOeeData
+      responses:
+        "200":
+          description: OEE data array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    wc_id:
+                      type: string
+                    shift_date:
+                      type: string
+                    shift_code:
+                      type: string
+                    availability:
+                      type: number
+                    performance:
+                      type: number
+                    quality:
+                      type: number
+                    oee:
+                      type: number
+                    total_output_ft:
+                      type: number
+
+  /api/performance/kpis:
+    get:
+      tags: ["Level 3 - F11 Performance"]
+      summary: Compute all plant KPIs
+      description: |
+        Computes 8 KPIs from live data: OEE, FPY, Schedule Adherence,
+        Labor Efficiency, Scrap Rate, MTBF, Document Currency, and Data
+        Capture Rate. Each KPI includes value, target, and PASS/FAIL status.
+      operationId: getPerformanceKpis
+      responses:
+        "200":
+          description: KPI array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kpi:
+                      type: string
+                    value:
+                      type: number
+                    target:
+                      type: number
+                    unit:
+                      type: string
+                    status:
+                      type: string
+                      enum: [PASS, FAIL]
+              example:
+                - kpi: OEE
+                  value: 86.2
+                  target: 85
+                  unit: "%"
+                  status: PASS
+                - kpi: FPY
+                  value: 97.8
+                  target: 97
+                  unit: "%"
+                  status: PASS
+
+  /api/performance/scrap_pareto:
+    get:
+      tags: ["Level 3 - F11 Performance"]
+      summary: Scrap Pareto analysis
+      description: |
+        Returns scrap totals grouped by cause code, ordered by total footage
+        descending for Pareto chart rendering.
+      operationId: getScrapPareto
+      responses:
+        "200":
+          description: Scrap causes ranked
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    cause_code:
+                      type: string
+                    total_ft:
+                      type: number
+                    event_count:
+                      type: integer
+
+  # ====================================================================
+  # Level 3 - F10 Traceability
+  # ====================================================================
+  /api/traceability/genealogy/{wo_id}:
+    get:
+      tags: ["Level 3 - F10 Traceability"]
+      summary: Lot genealogy for a work order
+      description: |
+        Alias for /api/traceability/trace with backward trace on the lots
+        produced by a given work order. Uses recursive CTE to traverse
+        the lot_tracking table up to 10 levels deep.
+      operationId: getGenealogy
+      parameters:
+        - name: wo_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lot trace results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lot:
+                    type: string
+                  direction:
+                    type: string
+                  trace:
+                    type: array
+                    items:
+                      type: object
+
+  /api/traceability/certificate/{wo_id}:
+    get:
+      tags: ["Level 3 - F10 Traceability"]
+      summary: Certificate of compliance
+      description: |
+        Generates a structured certificate of compliance for a work order,
+        aggregating product details, test results, lot genealogy, and
+        applicable specification (MIL-DTL-24643, IEEE 1580, UL 2196, etc.).
+      operationId: getCertificate
+      parameters:
+        - name: wo_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Certificate data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wo_id:
+                    type: string
+                  product:
+                    type: object
+                    properties:
+                      product_id:
+                        type: string
+                      name:
+                        type: string
+                      family:
+                        type: string
+                      awg:
+                        type: string
+                  customer:
+                    type: string
+                    nullable: true
+                  order_qty_kft:
+                    type: number
+                  test_summary:
+                    type: array
+                    items:
+                      type: object
+                  material_traceability:
+                    type: array
+                    items:
+                      type: object
+                  compliance_spec:
+                    type: string
+                  issue_date:
+                    type: string
+                    format: date-time
+                  all_tests_passed:
+                    type: boolean
+        "404":
+          description: Work order not found
+
+  /api/traceability/trace:
+    get:
+      tags: ["Level 3 - F10 Traceability"]
+      summary: Bi-directional lot trace
+      description: |
+        Performs a forward or backward recursive trace through the lot genealogy.
+        Forward trace finds all children (downstream products); backward trace
+        finds all parent materials. Max depth: 10 levels.
+      operationId: traceLot
+      parameters:
+        - name: lot
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Lot number to trace
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [forward, backward]
+            default: forward
+      responses:
+        "200":
+          description: Trace results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lot:
+                    type: string
+                  direction:
+                    type: string
+                  trace:
+                    type: array
+                    items:
+                      type: object
+
+  # ====================================================================
+  # Level 2 - Equipment
+  # ====================================================================
+  /api/equipment/status:
+    get:
+      tags: ["Level 2 - Equipment"]
+      summary: Equipment status with PM schedule
+      description: |
+        Returns all equipment with current status, maintenance schedule,
+        and next PM due date. Filterable by work center.
+      operationId: getEquipmentStatus
+      parameters:
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+          description: Filter by work center ID
+      responses:
+        "200":
+          description: Equipment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    equipment_id:
+                      type: integer
+                    equipment_code:
+                      type: string
+                    description:
+                      type: string
+                    work_center_id:
+                      type: string
+                    status:
+                      type: string
+                    last_pm_date:
+                      type: string
+                    next_pm_date:
+                      type: string
+
+  /api/equipment/downtime:
+    get:
+      tags: ["Level 2 - Equipment"]
+      summary: Downtime log
+      description: |
+        Returns downtime records filterable by work center and date range.
+        Limited to 200 records per request.
+      operationId: getEquipmentDowntime
+      parameters:
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Downtime records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    log_id:
+                      type: integer
+                    wc_id:
+                      type: string
+                    equipment_id:
+                      type: integer
+                    start_time:
+                      type: string
+                    end_time:
+                      type: string
+                    duration_min:
+                      type: number
+                    category:
+                      type: string
+                    cause:
+                      type: string
+
+  /api/equipment/mtbf/{equipment_id}:
+    get:
+      tags: ["Level 2 - Equipment"]
+      summary: MTBF for a specific equipment
+      description: |
+        Computes Mean Time Between Failures for a specific equipment item
+        based on its downtime history.
+      operationId: getEquipmentMtbf
+      parameters:
+        - name: equipment_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: MTBF calculation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  equipment_id:
+                    type: integer
+                  failure_count:
+                    type: integer
+                  total_downtime_min:
+                    type: number
+                  mtbf_hours:
+                    type: number
+                    nullable: true
+
+  # ====================================================================
+  # Level 1-2 - Process Control
+  # ====================================================================
+  /api/process/deviations:
+    get:
+      tags: ["Level 1-2 - Process Control"]
+      summary: Process deviations (alarms)
+      description: |
+        Returns process deviation records. Filterable by work center, severity,
+        and resolution status. Limited to 200 records.
+      operationId: getProcessDeviations
+      parameters:
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [Minor, Warning, Major, Critical]
+        - name: resolved
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1"]
+          description: "0 = unresolved, 1 = resolved"
+      responses:
+        "200":
+          description: Deviation records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    deviation_id:
+                      type: integer
+                    wc_id:
+                      type: string
+                    parameter_name:
+                      type: string
+                    severity:
+                      type: string
+                    deviation_value:
+                      type: number
+                    setpoint_value:
+                      type: number
+                    resolved:
+                      type: integer
+                    timestamp:
+                      type: string
+
+  /api/process/summary:
+    get:
+      tags: ["Level 1-2 - Process Control"]
+      summary: Process control summary KPIs
+      description: |
+        Returns summary counts: unresolved deviations, critical alarms,
+        active holds, total readings, and monitored work centers.
+      operationId: getProcessSummary
+      responses:
+        "200":
+          description: Process control summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unresolved_deviations:
+                    type: integer
+                  critical_alarms:
+                    type: integer
+                  active_holds:
+                    type: integer
+                  total_readings:
+                    type: integer
+                  wcs_monitored:
+                    type: integer
+
+  /api/process/live_readings:
+    get:
+      tags: ["Level 1-2 - Process Control"]
+      summary: Live process readings for a work center
+      description: |
+        Returns the latest reading per parameter for a work center,
+        including setpoint and limits from the active recipe.
+      operationId: getLiveReadings
+      parameters:
+        - name: wc_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Latest readings per parameter
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    parameter:
+                      type: string
+                    value:
+                      type: number
+                    timestamp:
+                      type: string
+                    quality_flag:
+                      type: string
+                    setpoint:
+                      type: number
+                      nullable: true
+                    lower_limit:
+                      type: number
+                      nullable: true
+                    upper_limit:
+                      type: number
+                      nullable: true
+
+  # ====================================================================
+  # Level 3 - F6 Labor
+  # ====================================================================
+  /api/labor/personnel:
+    get:
+      tags: ["Level 3 - F1 Resource Allocation"]
+      summary: Personnel list with certifications
+      description: |
+        Returns all personnel with their certifications concatenated.
+        Supports workforce planning and certification gap analysis.
+      operationId: getPersonnel
+      responses:
+        "200":
+          description: Personnel list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    person_id:
+                      type: integer
+                    employee_code:
+                      type: string
+                    employee_name:
+                      type: string
+                    role:
+                      type: string
+                    shift:
+                      type: string
+                    certifications:
+                      type: string
+                      nullable: true
+
+  /api/labor/hours:
+    get:
+      tags: ["Level 3 - F1 Resource Allocation"]
+      summary: Labor hours summary and efficiency
+      description: |
+        Returns labor hours aggregated by type (Run, Setup, Idle, etc.)
+        and overall labor efficiency (earned hours / actual hours).
+      operationId: getLaborHours
+      responses:
+        "200":
+          description: Labor summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        labor_type:
+                          type: string
+                        total_hours:
+                          type: number
+                        entry_count:
+                          type: integer
+                  efficiency:
+                    type: number
+                    nullable: true
+                    description: Earned hours / actual hours ratio
+
+  # ====================================================================
+  # Level 4 - ERP
+  # ====================================================================
+  /api/erp/summary:
+    get:
+      tags: ["Level 4 - ERP"]
+      summary: ERP dashboard KPIs
+      description: |
+        Single-call endpoint returning ERP-level KPIs: open sales/purchase orders,
+        AR balance, forecast accuracy, ISA-95 message count, revenue, COGS, and
+        gross margin.
+      operationId: getErpSummary
+      responses:
+        "200":
+          description: ERP KPIs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  open_sos:
+                    type: integer
+                  open_pos:
+                    type: integer
+                  ar_balance:
+                    type: number
+                  forecast_accuracy:
+                    type: number
+                  isa95_messages_today:
+                    type: integer
+                  total_revenue:
+                    type: number
+                  total_cogs:
+                    type: number
+                  gross_margin:
+                    type: number
+
+  /api/erp/isa95/messages:
+    get:
+      tags: ["Level 4 - ERP"]
+      summary: ISA-95 message log
+      description: |
+        Returns ISA-95 integration messages between L3 (MES) and L4 (ERP).
+        Filterable by direction (L4_to_L3, L3_to_L4) and message type.
+      operationId: getIsa95Messages
+      parameters:
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [L4_to_L3, L3_to_L4]
+        - name: type
+          in: query
+          schema:
+            type: string
+          description: Message type filter (e.g., ProductionSchedule, MaterialReceipt)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: ISA-95 messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    msg_id:
+                      type: integer
+                    direction:
+                      type: string
+                    message_type:
+                      type: string
+                    source_system:
+                      type: string
+                    target_system:
+                      type: string
+                    payload_summary:
+                      type: string
+                    status:
+                      type: string
+                    timestamp:
+                      type: string
+
+  # ====================================================================
+  # Cross-Level - AI/ML
+  # ====================================================================
+  /api/ai/anomalies:
+    get:
+      tags: ["Cross-Level - AI/ML"]
+      summary: Z-score anomaly detection
+      description: |
+        Performs z-score anomaly detection on all process_data_live readings.
+        Flags readings with |z| > 2.5 as Warning, |z| > 3.0 as Critical.
+        Returns up to 50 anomalies sorted by severity.
+      operationId: getAnomalies
+      responses:
+        "200":
+          description: Detected anomalies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    wc_id:
+                      type: string
+                    parameter:
+                      type: string
+                    value:
+                      type: number
+                    timestamp:
+                      type: string
+                    z_score:
+                      type: number
+                    abs_z:
+                      type: number
+                    mean:
+                      type: number
+                    stdev:
+                      type: number
+                    severity:
+                      type: string
+                      enum: [Warning, Critical]
+
+  /api/ai/recommendations:
+    get:
+      tags: ["Cross-Level - AI/ML"]
+      summary: AI-driven recommendations
+      description: |
+        Rules-based recommendation engine that synthesizes data from all MES
+        modules. Generates prioritized recommendations for: high scrap rates,
+        CUSUM drift, overdue PMs, low Cpk, expiring certs, OEE decline, and
+        unresolved deviations. Each recommendation references affected MESA
+        functions.
+      operationId: getRecommendations
+      responses:
+        "200":
+          description: Prioritized recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [quality, process, maintenance, labor, performance]
+                    priority:
+                      type: integer
+                      description: 1 = highest priority
+                    title:
+                      type: string
+                    detail:
+                      type: string
+                    mesa_functions:
+                      type: array
+                      items:
+                        type: string
+                    affected_wc:
+                      type: string
+
+  /api/ai/maintenance_predictions:
+    get:
+      tags: ["Cross-Level - AI/ML"]
+      summary: Predictive maintenance (exponential failure model)
+      description: |
+        Computes failure probability for each equipment item using
+        P(fail) = 1 - exp(-t / MTBF). Risk levels: OK, Warning, Critical.
+      operationId: getMaintenancePredictions
+      responses:
+        "200":
+          description: Equipment failure predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    equipment_id:
+                      type: integer
+                    equipment_code:
+                      type: string
+                    work_center_id:
+                      type: string
+                    days_since_pm:
+                      type: integer
+                    mtbf_days:
+                      type: number
+                    failure_probability:
+                      type: number
+                    failure_pct:
+                      type: number
+                    risk_level:
+                      type: string
+                      enum: [OK, Warning, Critical]
+
+  # ====================================================================
+  # Dashboard
+  # ====================================================================
+  /api/dashboard/kpis:
+    get:
+      tags: ["Level 3 - F11 Performance"]
+      summary: Dashboard KPI cards
+      description: |
+        Returns 6 supervisor-level KPI values: OEE, throughput (completed WOs),
+        WIP count, on-time delivery %, first-pass yield, and utilization.
+        Supports date range, work center, product family, and product ID filters.
+      operationId: getDashboardKpis
+      parameters:
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: wc_id
+          in: query
+          schema:
+            type: string
+        - name: family
+          in: query
+          schema:
+            type: string
+          description: Product family code (A, B, S, U, etc.)
+        - name: product_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dashboard KPIs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  oee:
+                    type: number
+                  throughput:
+                    type: integer
+                  wip:
+                    type: integer
+                  on_time:
+                    type: number
+                  fpy:
+                    type: number
+                  utilization:
+                    type: number
+              example:
+                oee: 86.2
+                throughput: 42
+                wip: 18
+                on_time: 91.3
+                fpy: 97.8
+                utilization: 78.5
+
+  # ====================================================================
+  # Data Collection
+  # ====================================================================
+  /api/datacollect/sensors:
+    get:
+      tags: ["Level 1-2 - Process Control"]
+      summary: Data collection sensor inventory
+      description: |
+        Returns all configured data collection points (sensors) across
+        the plant, including work center assignment and parameter name.
+      operationId: getDatacollectSensors
+      responses:
+        "200":
+          description: Sensor list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    point_id:
+                      type: integer
+                    wc_id:
+                      type: string
+                    parameter_name:
+                      type: string
+                    sensor_type:
+                      type: string
+                    unit:
+                      type: string
+
+components:
+  parameters:
+    page:
+      name: page
+      in: query
+      description: Page number (1-based)
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    per_page:
+      name: per_page
+      in: query
+      description: Items per page (max 200)
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+
+  schemas:
+    PaginatedEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items: {}
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+      required: [data, page, per_page, total]
+
+    WorkOrder:
+      type: object
+      properties:
+        wo_id:
+          type: string
+        product_id:
+          type: string
+        order_qty_kft:
+          type: number
+        priority:
+          type: integer
+        due_date:
+          type: string
+          format: date
+        planned_start:
+          type: string
+        planned_end:
+          type: string
+        actual_start:
+          type: string
+          nullable: true
+        actual_end:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [Pending, InProcess, Complete, On Hold, Cancelled]
+        business_unit:
+          type: string
+        created_date:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string

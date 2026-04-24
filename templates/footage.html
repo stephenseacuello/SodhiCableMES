@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% set active_page = "footage" %}
+{% block title %}Footage Tracker — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Production Footage Tracker</h1>
+<p class="page-subtitle">Digital tote board — shift target vs actual per work center</p>
+<div class="kpi-grid" id="footageBoard"></div>
+{% endblock %}
+{% block scripts %}<script>
+async function loadFootage() {
+  try {
+    const data = await apiFetch('/api/footage/tracker');
+    const board = document.getElementById('footageBoard');
+    board.innerHTML = data.map(d => {
+      const pct = d.target > 0 ? Math.round(d.actual / d.target * 100) : 0;
+      const color = pct >= 100 ? 'green' : pct >= 80 ? 'yellow' : 'red';
+      return `<div class="kpi-card ${color}"><div class="kpi-label">${d.wc_id}</div><div class="kpi-value">${fmt(d.actual)}</div><span class="kpi-unit">ft</span><div class="progress-bar" style="margin-top:8px"><div class="progress-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div><div class="kpi-target">Target: ${fmt(d.target)} ft (${pct}%)</div></div>`;
+    }).join('');
+  } catch(e) { document.getElementById('footageBoard').innerHTML = '<p style="color:var(--text-muted)">No footage data available</p>'; }
+}
+document.addEventListener('DOMContentLoaded', loadFootage);
+</script>{% endblock %}

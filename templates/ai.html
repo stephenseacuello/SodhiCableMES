@@ -1,0 +1,394 @@
+{% extends "base.html" %}{% set active_page = "ai" %}
+{% block title %}AI + MESA — Intelligent Manufacturing Layer — SodhiCable MES{% endblock %}
+{% block content %}
+<script>document.body.dataset.tour='ai'</script>
+<h1 class="page-title">AI + MESA &mdash; Intelligent Manufacturing Layer</h1>
+<p class="page-subtitle">MESA Function 12: AI/ML overlay &mdash; Claude-powered natural language queries, statistical anomaly detection, predictive analytics, and prescriptive recommendations</p>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+ <div class="kpi-card" id="kpiAnomalies"><div class="kpi-label">Anomalies Detected</div><div class="kpi-value">--</div><span class="kpi-unit">z &gt; 2.5&sigma;</span></div>
+ <div class="kpi-card" id="kpiFailures"><div class="kpi-label">Predicted Failures</div><div class="kpi-value">--</div><span class="kpi-unit">P(fail) &gt; 50%</span></div>
+ <div class="kpi-card blue" id="kpiRecs"><div class="kpi-label">AI Recommendations</div><div class="kpi-value">--</div><span class="kpi-unit">action items</span></div>
+ <div class="kpi-card" id="kpiRisk"><div class="kpi-label">Avg Quality Risk</div><div class="kpi-value">--</div><span class="kpi-unit">score</span></div>
+</div>
+
+<!-- 3-Tab Bar -->
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-ask">Ask Claude</button>
+ <button class="tab-btn" data-tab="tab-insights">AI Insights</button>
+ <button class="tab-btn" data-tab="tab-recs">Recommendations</button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- TAB 1: ASK CLAUDE (NLP Chat Interface)                         -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="tab-content active" id="tab-ask">
+ <div class="chart-card">
+  <h3>AI Natural Language Query &mdash; Powered by Claude <span id="nlpStatusBadge" class="badge badge-gray">checking...</span></h3>
+  <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">
+   Ask any question about the manufacturing data in plain English. Claude analyzes the 65-table schema, generates SQL, executes it, and explains the results.
+  </p>
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+   <input type="text" id="nlpInput" placeholder="e.g., What's the scrap rate on CV-1 this week?"
+          style="flex:1;padding:10px 14px;font-size:14px" onkeydown="if(event.key==='Enter')askClaude()">
+   <button class="btn btn-primary" onclick="askClaude()" id="nlpAskBtn" style="min-width:100px">Ask Claude</button>
+  </div>
+  <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px">
+   <span style="color:var(--text-muted);font-size:11px;align-self:center">Try:</span>
+   <button class="btn" style="font-size:11px;padding:4px 10px" onclick="askSuggested('What is the OEE for each work center?')">OEE by WC</button>
+   <button class="btn" style="font-size:11px;padding:4px 10px" onclick="askSuggested('Which products have the highest scrap rate?')">Top scrap products</button>
+   <button class="btn" style="font-size:11px;padding:4px 10px" onclick="askSuggested('Who can run CV-1 on the night shift?')">CV-1 night crew</button>
+   <button class="btn" style="font-size:11px;padding:4px 10px" onclick="askSuggested('Is DRAW-1 die wearing out?')">DRAW-1 drift</button>
+   <button class="btn" style="font-size:11px;padding:4px 10px" onclick="askSuggested('What are the top 5 overdue maintenance items?')">Overdue PMs</button>
+   <button class="btn" style="font-size:11px;padding:4px 10px" onclick="askSuggested('Show me work orders due this week that are not yet complete')">WOs due soon</button>
+  </div>
+  <div id="nlpChat" style="max-height:600px;overflow-y:auto"></div>
+  <div id="nlpFallback" style="display:none">
+   <p style="color:var(--accent-yellow);font-size:13px;margin-bottom:12px">
+    Claude API not configured. Showing pre-built example queries. Set <code>ANTHROPIC_API_KEY</code> to enable live AI queries.
+   </p>
+   <div id="nlpQueries"></div>
+  </div>
+ </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- TAB 2: AI INSIGHTS (Merged: Anomalies + Quality + Maint + CO)  -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="tab-content" id="tab-insights">
+
+ <!-- Anomaly Detection -->
+ <div class="chart-card" style="margin-bottom:16px">
+  <h3 style="border-bottom:2px solid var(--accent-green);padding-bottom:8px">
+   <span class="badge badge-green" style="margin-right:6px">L1</span> Anomaly Detection
+  </h3>
+  <p style="color:var(--text-muted);font-size:12px;margin:8px 0">Z-score analysis on process_data_live &mdash; flags readings where |z| &gt; 2.5&sigma;. Severity: &gt;3&sigma; = Critical, &gt;2.5&sigma; = Warning.</p>
+  <div class="chart-container" style="height:250px"><canvas id="anomalyChart"></canvas></div>
+  <div style="max-height:250px;overflow-y:auto;margin-top:8px">
+   <table class="data-table" id="anomalyTable">
+    <thead><tr><th>WC</th><th>Parameter</th><th>Value</th><th>Z-Score</th><th>Mean</th><th>Stdev</th><th>Severity</th><th>Timestamp</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+  <div id="anomalyCount" style="display:none"></div>
+ </div>
+
+ <!-- Predictive Quality -->
+ <div class="chart-card" style="margin-bottom:16px">
+  <h3 style="border-bottom:2px solid var(--accent-blue);padding-bottom:8px">
+   <span class="badge badge-blue" style="margin-right:6px">F7</span> Predictive Quality
+  </h3>
+  <p style="color:var(--text-muted);font-size:12px;margin:8px 0">Correlates process parameter deviations to scrap outcomes. Risk score = (avg deviation % / 100) &times; (scrap rate % / 100) &times; 100.</p>
+  <div class="chart-container" style="height:250px"><canvas id="qualityChart"></canvas></div>
+  <div style="max-height:250px;overflow-y:auto;margin-top:8px">
+   <table class="data-table" id="qualityTable">
+    <thead><tr><th>WC</th><th>Top Deviating Params</th><th>Scrap (ft)</th><th>Rate %</th><th>Avg Dev %</th><th>Risk</th><th>Level</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+
+ <!-- Maintenance Predictions -->
+ <div class="chart-card" style="margin-bottom:16px">
+  <h3 style="border-bottom:2px solid var(--accent-yellow);padding-bottom:8px">
+   <span class="badge badge-yellow" style="margin-right:6px">F9</span> Maintenance Predictions
+  </h3>
+  <p style="color:var(--text-muted);font-size:12px;margin:8px 0">Exponential failure model: P(fail) = 1 &minus; e<sup>&minus;t/MTBF</sup>. Risk: &gt;70% = Critical, &gt;40% = Warning.</p>
+  <div class="chart-container" style="height:250px"><canvas id="maintChart"></canvas></div>
+  <div style="max-height:250px;overflow-y:auto;margin-top:8px">
+   <table class="data-table" id="maintTable">
+    <thead><tr><th>Equipment</th><th>WC</th><th>Days Since PM</th><th>MTBF</th><th>Fail %</th><th>Risk</th><th>Overdue</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+
+ <!-- Changeover Learning -->
+ <div class="chart-card">
+  <h3 style="border-bottom:2px solid #a855f7;padding-bottom:8px">
+   <span class="badge" style="background:rgba(168,85,247,0.15);color:#a855f7;margin-right:6px">F2</span> Changeover Learning
+  </h3>
+  <p style="color:var(--text-muted);font-size:12px;margin:8px 0">Compares static changeover matrix against actual schedule sequences. ML would continuously update setup time estimates, improving scheduling accuracy 15-25%.</p>
+  <div class="kpi-grid" id="coKPIs" style="margin-bottom:12px"></div>
+  <h4>Top Changeover-Heavy Transitions</h4>
+  <table class="data-table" id="coTable">
+   <thead><tr><th>From Product</th><th>To Product</th><th>Setup (min)</th><th>Scrap (ft)</th></tr></thead>
+   <tbody><tr><td colspan="4" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+  </table>
+  <h4 style="margin-top:12px">Schedule Sequence Insights</h4>
+  <table class="data-table" id="coInsights">
+   <thead><tr><th>WC</th><th>From</th><th>To</th><th>Setup</th><th>Scrap</th><th>Note</th></tr></thead>
+   <tbody><tr><td colspan="6" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+  </table>
+ </div>
+
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- TAB 3: RECOMMENDATIONS (Prioritized Action List)               -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="tab-content" id="tab-recs">
+ <div class="chart-card">
+  <h3>AI Recommendations &mdash; Prioritized Action Items</h3>
+  <p style="color:var(--text-muted);font-size:12px;margin:0 0 12px">Synthesized from anomaly detection, predictive quality, maintenance forecasting, and process monitoring. Each recommendation maps to MESA-11 functions and links to the relevant page.</p>
+  <div id="recsList" style="display:flex;flex-direction:column;gap:10px"></div>
+  <div id="recsEmpty" style="display:none;color:var(--text-muted);padding:24px;text-align:center">No recommendations &mdash; all systems nominal.</div>
+ </div>
+</div>
+
+{% endblock %}
+{% block scripts %}<script>
+/* ═══════════════════════════════════════════════════════════════════
+   SodhiCable MES — AI Insights Page (3-Tab Layout)
+   Tab 1: Ask Claude | Tab 2: AI Insights (merged) | Tab 3: Recs
+   ═══════════════════════════════════════════════════════════════════ */
+
+let anomalyChart = null, qualityChart = null, maintChart = null;
+
+/* ---- Helpers --------------------------------------------------------- */
+const priorityMeta = {
+  1:{label:'Critical',cls:'red',bg:'#dc2626'}, 2:{label:'High',cls:'yellow',bg:'#f59e0b'},
+  3:{label:'Medium',cls:'yellow',bg:'#eab308'}, 4:{label:'Low',cls:'blue',bg:'#3b82f6'},
+  5:{label:'Info',cls:'blue',bg:'#64748b'},
+};
+function severityBadge(sev) {
+  const cls = sev === 'Critical' ? 'red' : sev === 'Warning' ? 'yellow' : 'green';
+  return `<span class="badge badge-${cls}">${sev}</span>`;
+}
+function riskBadge(score) {
+  const cls = score > 1.0 ? 'red' : score > 0.3 ? 'yellow' : 'green';
+  const label = score > 1.0 ? 'High' : score > 0.3 ? 'Medium' : 'Low';
+  return `<span class="badge badge-${cls}">${label}</span>`;
+}
+
+/* ---- KPI Summary ----------------------------------------------------- */
+async function loadSummary() {
+  try {
+    const s = await apiFetch('/api/ai/summary');
+    const ac = s.anomalies_detected || 0;
+    setKPIAnimated('kpiAnomalies', ac, 'z > 2.5\u03C3', ac > 10 ? 'red' : ac > 5 ? 'yellow' : 'green');
+    const fc = s.predicted_failures || 0;
+    setKPIAnimated('kpiFailures', fc, 'P(fail) > 50%', fc > 3 ? 'red' : fc > 1 ? 'yellow' : 'green');
+    setKPIAnimated('kpiRecs', s.recommendations_count || 0, 'action items', 'blue');
+    const rk = s.avg_risk_score || 0;
+    setKPIAnimated('kpiRisk', rk.toFixed(2), 'score', rk > 1.0 ? 'red' : rk > 0.3 ? 'yellow' : 'green');
+  } catch(e) {}
+}
+
+/* ---- Anomaly Detection ----------------------------------------------- */
+async function loadAnomalies() {
+  try {
+    const data = await apiFetch('/api/ai/anomalies');
+    document.getElementById('anomalyCount').textContent = data.length;
+    if (anomalyChart) anomalyChart.destroy();
+    if (data.length > 0) {
+      const pts = data.map((a,i) => ({x:i, y:a.z_score, r:Math.min(Math.max(a.abs_z*2.5,4),16)}));
+      const colors = data.map(a => a.severity==='Critical' ? '#dc2626' : '#f59e0b');
+      anomalyChart = new Chart(document.getElementById('anomalyChart'), {
+        type:'bubble', data:{datasets:[{label:'Anomalies',data:pts,backgroundColor:colors.map(c=>c+'99'),borderColor:colors,borderWidth:1.5}]},
+        options:{responsive:true,maintainAspectRatio:false,
+          scales:{x:{title:{display:true,text:'Anomaly Rank'},ticks:{display:false}},y:{title:{display:true,text:'Z-Score'},grid:{color:'rgba(148,163,184,0.1)'}}},
+          plugins:{tooltip:{callbacks:{label:function(ctx){const a=data[ctx.dataIndex];return[`${a.wc_id}/${a.parameter}`,`Value:${a.value} Z:${a.z_score}`,a.severity]}}},
+            annotation:{annotations:{
+              uw:{type:'line',yMin:2.5,yMax:2.5,borderColor:'#f59e0b',borderDash:[5,5],borderWidth:1},
+              lw:{type:'line',yMin:-2.5,yMax:-2.5,borderColor:'#f59e0b',borderDash:[5,5],borderWidth:1},
+              uc:{type:'line',yMin:3,yMax:3,borderColor:'#dc2626',borderDash:[3,3],borderWidth:1},
+              lc:{type:'line',yMin:-3,yMax:-3,borderColor:'#dc2626',borderDash:[3,3],borderWidth:1}
+            }}}}
+      });
+    }
+    const tb = document.querySelector('#anomalyTable tbody');
+    tb.innerHTML = data.length ? data.slice(0,15).map(a =>
+      `<tr><td>${a.wc_id}</td><td>${a.parameter}</td><td class="number">${a.value}</td><td class="number" style="font-weight:600">${a.z_score}</td><td class="number">${a.mean}</td><td class="number">${a.stdev}</td><td>${severityBadge(a.severity)}</td><td>${(a.timestamp||'').substring(0,16)}</td></tr>`
+    ).join('') : '<tr><td colspan="8" style="color:var(--text-muted)">No anomalies</td></tr>';
+  } catch(e) {}
+}
+
+/* ---- Predictive Quality ---------------------------------------------- */
+async function loadQuality() {
+  try {
+    const data = await apiFetch('/api/ai/quality_predictions');
+    if (qualityChart) qualityChart.destroy();
+    if (data.length > 0) {
+      const sorted = data.slice().sort((a,b) => b.risk_score - a.risk_score);
+      qualityChart = new Chart(document.getElementById('qualityChart'), {
+        type:'bar', data:{labels:sorted.map(d=>d.wc_id),datasets:[{label:'Risk Score',data:sorted.map(d=>d.risk_score),
+          backgroundColor:sorted.map(d=>d.risk_score>1?'#dc262699':d.risk_score>0.3?'#f59e0b99':'#22c55e99'),
+          borderColor:sorted.map(d=>d.risk_score>1?'#dc2626':d.risk_score>0.3?'#f59e0b':'#22c55e'),borderWidth:1.5}]},
+        options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+          scales:{x:{title:{display:true,text:'Risk Score'},beginAtZero:true}}}
+      });
+    }
+    const tb = document.querySelector('#qualityTable tbody');
+    tb.innerHTML = data.length ? data.map(d => {
+      const tp = (d.parameters||[]).slice(0,3).map(p=>`${p.param} (${p.deviation_pct}%)`).join(', ')||'-';
+      return `<tr><td>${d.wc_id}</td><td style="font-size:0.85em">${tp}</td><td class="number">${fmt(d.scrap_qty)}</td><td class="number">${d.scrap_rate}%</td><td class="number">${d.avg_deviation_pct}%</td><td class="number" style="font-weight:600">${d.risk_score.toFixed(4)}</td><td>${riskBadge(d.risk_score)}</td></tr>`;
+    }).join('') : '<tr><td colspan="7" style="color:var(--text-muted)">No data</td></tr>';
+  } catch(e) {}
+}
+
+/* ---- Maintenance Predictions ----------------------------------------- */
+async function loadMaintenance() {
+  try {
+    const data = await apiFetch('/api/ai/maintenance_predictions');
+    if (maintChart) maintChart.destroy();
+    if (data.length > 0) {
+      const sorted = data.slice().sort((a,b) => b.failure_probability - a.failure_probability);
+      maintChart = new Chart(document.getElementById('maintChart'), {
+        type:'bar', data:{labels:sorted.map(d=>d.equipment_code),datasets:[{label:'Failure Prob %',data:sorted.map(d=>d.failure_pct),
+          backgroundColor:sorted.map(d=>d.risk_level==='Critical'?'#dc262699':d.risk_level==='Warning'?'#f59e0b99':'#22c55e99'),
+          borderColor:sorted.map(d=>d.risk_level==='Critical'?'#dc2626':d.risk_level==='Warning'?'#f59e0b':'#22c55e'),borderWidth:1.5}]},
+        options:{responsive:true,maintainAspectRatio:false,
+          scales:{y:{title:{display:true,text:'Failure Prob (%)'},beginAtZero:true,max:100}},
+          plugins:{annotation:{annotations:{
+            crit:{type:'line',yMin:70,yMax:70,borderColor:'#dc2626',borderDash:[5,5],borderWidth:1},
+            warn:{type:'line',yMin:40,yMax:40,borderColor:'#f59e0b',borderDash:[5,5],borderWidth:1}
+          }}}}
+      });
+    }
+    const tb = document.querySelector('#maintTable tbody');
+    tb.innerHTML = data.length ? data.map(d => {
+      const rl = d.risk_level==='Critical'?'red':d.risk_level==='Warning'?'yellow':'green';
+      const od = d.pm_overdue?'red':'green';
+      return `<tr><td>${d.equipment_code}</td><td>${d.work_center_id||'-'}</td><td class="number">${d.days_since_pm}</td><td class="number">${d.mtbf_days}</td><td class="number" style="font-weight:600">${d.failure_pct}%</td><td><span class="badge badge-${rl}">${d.risk_level}</span></td><td><span class="badge badge-${od}">${d.pm_overdue?'OVERDUE':'OK'}</span></td></tr>`;
+    }).join('') : '<tr><td colspan="7" style="color:var(--text-muted)">No data</td></tr>';
+  } catch(e) {}
+}
+
+/* ---- Changeover Learning --------------------------------------------- */
+async function loadChangeover() {
+  try {
+    const d = await apiFetch('/api/ai/changeover_analysis');
+    document.getElementById('coKPIs').innerHTML = `
+      <div class="kpi-card blue"><div class="kpi-label">Matrix Entries</div><div class="kpi-value">${d.total_matrix_entries}</div></div>
+      <div class="kpi-card blue"><div class="kpi-label">Actual Transitions</div><div class="kpi-value">${d.actual_transitions_found}</div></div>`;
+    document.querySelector('#coTable tbody').innerHTML = (d.top_changeovers||[]).map(c =>
+      `<tr><td>${c.from_product}</td><td>${c.to_product}</td><td>${c.setup_minutes}</td><td>${c.scrap_ft}</td></tr>`
+    ).join('') || '<tr><td colspan="4">No data</td></tr>';
+    document.querySelector('#coInsights tbody').innerHTML = (d.schedule_insights||[]).map(s =>
+      `<tr><td>${s.wc_id}</td><td>${s.from_product}</td><td>${s.to_product}</td><td>${s.planned_setup_min}m</td><td>${s.planned_scrap_ft}ft</td><td style="font-size:11px;color:var(--text-muted)">${s.learning_note}</td></tr>`
+    ).join('') || '<tr><td colspan="6">No transitions</td></tr>';
+  } catch(e) {}
+}
+
+/* ---- Recommendations ------------------------------------------------- */
+async function loadRecommendations() {
+  try {
+    const data = await apiFetch('/api/ai/recommendations');
+    const container = document.getElementById('recsList');
+    const empty = document.getElementById('recsEmpty');
+    if (!data.length) { container.innerHTML=''; empty.style.display='block'; return; }
+    empty.style.display = 'none';
+    const pageMap = {
+      'High Scrap':'/quality','CUSUM Drift':'/process','Overdue PM':'/equipment',
+      'Low Cpk':'/quality','Cert Expiry':'/labor','OEE Decline':'/oee','Unresolved Deviations':'/process'
+    };
+    container.innerHTML = data.map(r => {
+      const pm = priorityMeta[r.priority] || priorityMeta[5];
+      const badges = (r.mesa_functions||[]).map(f=>`<span class="badge badge-blue" style="font-size:0.75em;padding:2px 6px;margin-right:3px">${f}</span>`).join('');
+      const link = pageMap[r.type] || '/';
+      return `<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px 18px;border-left:4px solid ${pm.bg}">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span class="badge badge-${pm.cls}" style="font-size:0.8em">${pm.label}</span>
+          <strong style="font-size:1.05em">${r.title}</strong>
+          <span style="margin-left:auto;font-size:0.8em;color:var(--text-muted)">${r.affected_wc||''}</span>
+        </div>
+        <p style="margin:0 0 8px;color:var(--text-secondary);line-height:1.5;font-size:0.92em">${r.detail}</p>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${badges}
+          <a href="${link}" style="margin-left:auto;font-size:0.8em;color:var(--accent-blue)">View &rarr;</a>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+/* ---- NLP / Claude ---------------------------------------------------- */
+async function loadNLP() {
+  try {
+    const status = await apiFetch('/api/ai/nlp_status');
+    const badge = document.getElementById('nlpStatusBadge');
+    if (status.ready) { badge.textContent='Claude API Ready'; badge.className='badge badge-green'; }
+    else if (status.api_key_set) { badge.textContent='SDK not installed'; badge.className='badge badge-yellow'; showFallback(); }
+    else { badge.textContent='API key not set'; badge.className='badge badge-yellow'; showFallback(); }
+  } catch(e) { showFallback(); }
+}
+
+function showFallback() {
+  document.getElementById('nlpFallback').style.display = 'block';
+  apiFetch('/api/ai/nlp_queries').then(d => {
+    document.getElementById('nlpQueries').innerHTML = (d.queries||[]).map(q => {
+      const badges = (q.mesa_functions||[]).map(f=>`<span class="badge badge-blue" style="margin-right:4px">${f}</span>`).join('');
+      const res = (q.results||[]).length > 0
+        ? `<table class="data-table" style="margin-top:8px;font-size:12px"><thead><tr>${Object.keys(q.results[0]).map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>${q.results.map(r=>`<tr>${Object.values(r).map(v=>`<td>${v!==null?v:'--'}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+        : '';
+      return `<div style="background:var(--bg-secondary);border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid var(--accent-blue)">
+        <strong>"${q.question}"</strong><div style="margin-top:4px">${badges}</div>
+        <div style="margin-top:8px;padding:8px;background:var(--bg-primary);border-radius:4px;font-family:monospace;font-size:11px;color:var(--accent-gold);overflow-x:auto">${q.sql}</div>${res}</div>`;
+    }).join('');
+  }).catch(e=>{});
+}
+
+function askSuggested(q) { document.getElementById('nlpInput').value=q; askClaude(); }
+
+async function askClaude() {
+  const input = document.getElementById('nlpInput');
+  const question = input.value.trim();
+  if (!question) return;
+  const chat = document.getElementById('nlpChat');
+  const btn = document.getElementById('nlpAskBtn');
+
+  chat.innerHTML += `<div style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid var(--accent-blue)">
+    <strong style="color:var(--accent-blue)">You:</strong> <span style="color:var(--text-primary)">${question}</span></div>`;
+  const lid = 'ld-'+Date.now();
+  chat.innerHTML += `<div id="${lid}" style="padding:12px;margin-bottom:8px;color:var(--text-muted)"><span class="spinner" style="margin-right:8px"></span> Claude is analyzing...</div>`;
+  chat.scrollTop = chat.scrollHeight;
+  btn.disabled=true; btn.textContent='Thinking...'; input.value='';
+
+  try {
+    const d = await apiPost('/api/ai/ask', {question});
+    const el=document.getElementById(lid); if(el) el.remove();
+    if (d.error) {
+      chat.innerHTML += `<div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid var(--accent-red)"><strong style="color:var(--accent-red)">Error:</strong> ${d.error}</div>`;
+      if (d.fallback) showFallback();
+    } else {
+      let sqlHtml = (d.sql_queries||[]).map(q=>`<div style="margin-top:8px;padding:8px;background:var(--bg-primary);border-radius:4px;font-family:monospace;font-size:11px;color:var(--accent-gold);overflow-x:auto">${q}</div>`).join('');
+      let answer = (d.answer||'').replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+      chat.innerHTML += `<div style="background:var(--bg-secondary);border-radius:8px;padding:16px;margin-bottom:12px;border-left:4px solid var(--accent-green)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="color:var(--accent-green)">Claude (${d.model||'AI'})</strong>
+          <span style="color:var(--text-muted);font-size:10px">${d.sql_queries?d.sql_queries.length+' queries':''}</span>
+        </div>
+        <div style="color:var(--text-primary);font-size:13px;line-height:1.7">${answer}</div>${sqlHtml}</div>`;
+    }
+  } catch(e) {
+    const el=document.getElementById(lid); if(el) el.remove();
+    chat.innerHTML += `<div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid var(--accent-red)"><strong style="color:var(--accent-red)">Error:</strong> ${e.message}</div>`;
+  } finally { btn.disabled=false; btn.textContent='Ask Claude'; chat.scrollTop=chat.scrollHeight; }
+}
+
+/* ---- Initialize ------------------------------------------------------ */
+let insightsLoaded = false, recsLoaded = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadSummary();
+  loadNLP();  // Ask Claude is the default tab
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.tab === 'tab-insights' && !insightsLoaded) {
+        insightsLoaded = true;
+        // Load all 4 insight sections in parallel; small delay for canvas visibility
+        setTimeout(() => {
+          Promise.all([loadAnomalies(), loadQuality(), loadMaintenance(), loadChangeover()]);
+        }, 150);
+      }
+      if (btn.dataset.tab === 'tab-recs' && !recsLoaded) {
+        recsLoaded = true;
+        loadRecommendations();
+      }
+    });
+  });
+});
+</script>{% endblock %}

@@ -1,0 +1,83 @@
+\relax 
+\@writefile{toc}{\contentsline {section}{\numberline {1}System Overview}{1}{}\protected@file@percent }
+\newlabel{sec:overview}{{1}{1}{System Overview}{section.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Business Context}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}ISA-95 Functional Hierarchy}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Manufacturing Process Flow}{3}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces SodhiCable production process flow (typical instrumentation cable routing). Color indicates stage category. Inline spark testing and printing/marking run continuously during insulation and jacketing extrusion. Optional stations not shown: ARMOR-1 (armored MIL-DTL cable), CCCW-1 (corrugated copper welding for UL-2196), LPML-1 (LSOH jacketing), and DHT routing (PT-1 $\to $ NJ-EXT $\to $ PX-1). Shipment requires F4-generated Certificate of Compliance.}}{3}{}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:processflow}{{1}{3}{Manufacturing Process Flow}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Why All 11 MESA Functions Are Needed}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.5}MESA-11 Summary Table}{5}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces MESA-11 Function Summary --- SodhiCable}}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.6}Functions Beyond the MESA-11 Framework}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.7}Cross-Function Data Flow Map}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.8}Assumptions \& Design Constraints}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Database Design --- Table Specifications}{8}{}\protected@file@percent }
+\newlabel{sec:schema}{{2}{8}{Database Design --- Table Specifications}{section.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces SodhiCable MES 78-table schema clustered by MESA function. Color indicates function group: \textcolor {secblue}{\textbf  {Planning}} (F1$\to $F2$\to $F3 schedule chain), \textcolor {orange!80!black}{\textbf  {Execution}} (F4 recipes/C\,of\,C, F5 data, F8 process control), \textcolor {teal!80!black}{\textbf  {Quality}} (F7 SPC/NCR, F10 genealogy/traceability), and \textcolor {violet!70!black}{\textbf  {Support}} (F6 labor, F9 maintenance, F11 KPIs). All functions read from the central Reference Hub (shared dimension tables). Colored dashed arrows show principal cross-function FK relationships.}}{9}{}\protected@file@percent }
+\newlabel{fig:erdiagram}{{2}{9}{Database Design --- Table Specifications}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}F1 --- Resource Allocation \& Status}{9}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}F2 --- Operations Scheduling}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}F3 --- Dispatching}{13}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}F4 --- Document Control}{14}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}F5 --- Data Collection \& Acquisition}{16}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}F6 --- Labor Management \& Tracking}{18}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}F7 --- Quality Management \& SPC}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.8}F8 --- Process Management \& Control}{21}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.9}F9 --- Maintenance Management}{23}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.10}F10 --- Product Tracking \& Genealogy}{26}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.11}F11 --- Performance Analysis}{28}{}\protected@file@percent }
+\gdef \LT@i {\LT@entry 
+    {1}{34.52306pt}\LT@entry 
+    {1}{196.9429pt}\LT@entry 
+    {1}{162.49014pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Integration Timeline --- A Day at SodhiCable}{30}{}\protected@file@percent }
+\newlabel{sec:timeline}{{3}{30}{Integration Timeline --- A Day at SodhiCable}{section.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Implementation Roadmap}{32}{}\protected@file@percent }
+\newlabel{sec:roadmap}{{4}{32}{Implementation Roadmap}{section.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Algorithm Cross-Reference Table}{35}{}\protected@file@percent }
+\newlabel{sec:algxref}{{5}{35}{Algorithm Cross-Reference Table}{section.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Algorithm Cross-Reference --- Course Week, Complexity, and Homework Mapping}}{35}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}AI/ML Extension Layer}{35}{}\protected@file@percent }
+\newlabel{sec:ai}{{6}{35}{AI/ML Extension Layer}{section.6}{}}
+\citation{saenz2009}
+\citation{kletti2007}
+\citation{mesa1997}
+\citation{almada2016}
+\citation{mantravadi2019}
+\citation{shojaeinasab2022}
+\citation{cupek2016}
+\citation{govindaraju2016}
+\citation{auto2026}
+\citation{chen2021}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Related Work}{36}{}\protected@file@percent }
+\newlabel{sec:related}{{7}{36}{Related Work}{section.7}{}}
+\citation{deoliveira2019}
+\citation{csir2022}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{37}{}\protected@file@percent }
+\bibcite{mesa1997}{1}
+\bibcite{isa95}{2}
+\bibcite{isa88}{3}
+\bibcite{kingman1961}{4}
+\bibcite{hopp2011}{5}
+\bibcite{montgomery2019}{6}
+\bibcite{pinedo2022}{7}
+\bibcite{saenz2009}{8}
+\bibcite{kletti2007}{9}
+\bibcite{almada2016}{10}
+\bibcite{mantravadi2019}{11}
+\bibcite{shojaeinasab2022}{12}
+\bibcite{cupek2016}{13}
+\bibcite{govindaraju2016}{14}
+\bibcite{auto2026}{15}
+\bibcite{chen2021}{16}
+\bibcite{deoliveira2019}{17}
+\bibcite{csir2022}{18}
+\bibcite{apiliogullari2022}{19}
+\bibcite{panetto2015}{20}
+\bibcite{lasi2014}{21}
+\bibcite{dutta2022}{22}
+\bibcite{scholten2007}{23}
+\bibcite{ulsolutions}{24}
+\gdef \@abspage@last{39}

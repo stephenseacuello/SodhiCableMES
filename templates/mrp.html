@@ -1,0 +1,177 @@
+{% extends "base.html" %}{% set active_page = "mrp" %}
+{% block title %}MRP Planning — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Material Requirements Planning</h1>
+<p class="page-subtitle">Multi-level BOM explosion, time-phased netting, 7 lot-sizing methods (L4L, EOQ, POQ, FOQ, Silver-Meal, Wagner-Whitin, EPQ)</p>
+
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-bom">BOM Explosion</button>
+ <button class="tab-btn" data-tab="tab-run">Run MRP</button>
+ <button class="tab-btn" data-tab="tab-history">Run History</button>
+</div>
+
+<!-- BOM Explosion Tab -->
+<div class="tab-content active" id="tab-bom">
+ <div class="control-panel"><div class="control-row">
+  <div class="control-group"><label>Product</label>
+   <select id="productSelect" style="min-width:250px"><option value="">Select product...</option></select>
+  </div>
+  <div class="control-group"><label>Lot Sizing</label>
+   <select id="lotMethod">
+    <option value="L4L">Lot-for-Lot (L4L)</option><option value="EOQ">Economic Order Qty (EOQ)</option>
+    <option value="POQ">Period Order Qty (POQ)</option><option value="FOQ">Fixed Order Qty (FOQ)</option>
+    <option value="SM">Silver-Meal</option><option value="WW">Wagner-Whitin</option><option value="EPQ">Econ Production Qty (EPQ)</option>
+   </select>
+  </div>
+  <button class="btn btn-primary" onclick="explodeBOM()">Explode BOM</button>
+ </div></div>
+
+ <!-- BOM Tree -->
+ <div class="chart-card"><h3>Bill of Materials Tree</h3>
+  <div id="bomTree" style="font-family:monospace;font-size:13px;line-height:1.8;padding:12px;color:var(--text-secondary)">
+   Select a product and click Explode BOM to see the multi-level material requirements.
+  </div>
+ </div>
+
+ <!-- MRP Grid -->
+ <div class="chart-card" style="margin-top:12px"><h3>MRP Time-Phased Grid (8 weeks)</h3>
+  <div style="overflow-x:auto">
+   <table class="data-table" id="mrpGrid">
+    <thead id="mrpHeader"><tr><th style="min-width:150px">Material</th><th>Row</th></tr></thead>
+    <tbody></tbody>
+   </table>
+  </div>
+ </div>
+</div>
+
+<!-- Run Full MRP Tab -->
+<div class="tab-content" id="tab-run">
+ <div class="control-panel"><div class="control-row">
+  <button class="btn btn-success" onclick="runFullMRP()">Run Full MRP (all products)</button>
+  <span id="mrpStatus" style="color:var(--text-muted);font-size:12px"></span>
+ </div></div>
+ <div class="kpi-grid" id="mrpKPIs"></div>
+ <button class="btn btn-primary" onclick="saveMRPRun()" style="margin-top:12px">Save Run to History</button>
+</div>
+
+<!-- MRP Run History Tab -->
+<div class="tab-content" id="tab-history">
+ <h3>Past MRP Runs</h3>
+ <table class="data-table" id="mrpHistoryTable">
+  <thead><tr><th>Run ID</th><th>Date/Time</th><th>Product</th><th>Lot Method</th><th>Notes</th></tr></thead>
+  <tbody><tr><td colspan="5" style="color:var(--text-muted)">Loading...</td></tr></tbody>
+ </table>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+async function loadProducts() {
+  const d = await apiFetch('/api/mrp/products');
+  const products = d.products || d;
+  const sel = document.getElementById('productSelect');
+  if (!Array.isArray(products)) return;
+  products.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id || p.product_id;
+    o.textContent = `[${p.family}] ${p.id || p.product_id} — ${p.name}`;
+    sel.appendChild(o);
+  });
+}
+
+async function explodeBOM() {
+  const product = document.getElementById('productSelect').value;
+  if (!product) { showToast('Select a product first', 'error'); return; }
+  const method = document.getElementById('lotMethod').value;
+
+  const d = await apiFetch(`/api/mrp/explode?product=${product}&lot_method=${method}`);
+
+  // Render BOM tree
+  const tree = document.getElementById('bomTree');
+  if (d.bom) {
+    tree.innerHTML = renderBOMTree(d.bom, 0);
+  } else {
+    tree.innerHTML = '<span style="color:var(--accent-red)">No BOM data for this product</span>';
+  }
+
+  // Render MRP grid
+  const weeks = d.weeks || 8;
+  const thead = document.getElementById('mrpHeader');
+  thead.innerHTML = '<tr><th style="min-width:150px">Material</th><th>Row</th>' +
+    Array.from({length: weeks}, (_, i) => `<th class="number">Wk ${i+1}</th>`).join('') + '</tr>';
+
+  const tbody = document.querySelector('#mrpGrid tbody');
+  const grid = d.grid || [];
+  if (grid.length) {
+    tbody.innerHTML = grid.map(item => {
+      return (item.rows || []).map((row, ri) => {
+        const isFirst = ri === 0;
+        const rowClass = row.label === 'Net Req' || row.label === 'Planned Release' ? 'font-weight:700' : '';
+        return `<tr style="${rowClass}">
+          <td>${isFirst ? `<strong style="color:var(--accent-gold)">${item.name}</strong>` : ''}</td>
+          <td style="color:var(--text-muted);font-size:11px">${row.label}</td>
+          ${(row.values || []).map(v => {
+            const color = v < 0 ? 'color:#ef4444' : v > 0 ? 'color:var(--text-primary)' : 'color:var(--text-muted)';
+            return `<td class="number" style="${color}">${v}</td>`;
+          }).join('')}
+        </tr>`;
+      }).join('');
+    }).join('');
+    showToast(`BOM exploded: ${grid.length} materials, ${weeks} weeks`, 'success');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted)">No materials found in BOM</td></tr>';
+  }
+}
+
+function renderBOMTree(node, depth) {
+  const indent = '│  '.repeat(depth);
+  const prefix = depth === 0 ? '📦 ' : '├── ';
+  const color = depth === 0 ? 'var(--accent-gold)' : depth === 1 ? 'var(--accent-blue)' : 'var(--text-secondary)';
+  let html = `<div style="color:${color}">${indent}${prefix}<strong>${node.name}</strong> × ${node.qty || 1} (LT=${node.lead_time || 0}d)</div>`;
+  (node.children || []).forEach(child => {
+    html += renderBOMTree(child, depth + 1);
+  });
+  return html;
+}
+
+async function runFullMRP() {
+  const status = document.getElementById('mrpStatus');
+  status.textContent = 'Running MRP engine...';
+  try {
+    const d = await apiPost('/api/mrp/run', {});
+    const kpis = document.getElementById('mrpKPIs');
+    kpis.innerHTML = `
+      <div class="kpi-card green"><div class="kpi-label">Total Planned Orders</div><div class="kpi-value">${d.total_orders || 0}</div></div>
+      <div class="kpi-card ${(d.past_due || 0) > 0 ? 'red' : 'green'}"><div class="kpi-label">Past Due</div><div class="kpi-value">${d.past_due || 0}</div></div>
+    `;
+    status.textContent = `MRP complete: ${d.total_orders} orders, ${d.past_due} past due`;
+    showToast(`MRP: ${d.total_orders} planned orders generated`, 'success');
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    showToast('MRP failed: ' + err.message, 'error');
+  }
+}
+
+async function saveMRPRun() {
+  const product = document.getElementById('productSelect').value;
+  const method = document.getElementById('lotMethod').value;
+  try {
+    await apiPost('/api/mrp/save_run', { product_id: product, lot_method: method, result: {}, notes: 'Saved from UI' });
+    showToast('MRP run saved to history', 'success');
+    loadMRPHistory();
+  } catch(e) { showToast('Failed to save', 'error'); }
+}
+
+async function loadMRPHistory() {
+  try {
+    const rows = await apiFetch('/api/mrp/history');
+    const tb = document.getElementById('mrpHistoryTable').querySelector('tbody');
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted)">No saved runs yet</td></tr>'; return; }
+    tb.innerHTML = rows.map(r => `<tr>
+      <td>${r.run_id}</td><td>${r.run_datetime || ''}</td><td>${r.product_id || 'All'}</td>
+      <td>${r.lot_method || ''}</td><td>${r.notes || ''}</td>
+    </tr>`).join('');
+  } catch(e) { /* table not created yet */ }
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadProducts(); loadMRPHistory(); });
+</script>{% endblock %}

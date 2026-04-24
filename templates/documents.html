@@ -1,0 +1,175 @@
+{% extends "base.html" %}{% set active_page = "documents" %}
+{% block title %}F4 — Document Control — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">F4 — Document Control</h1>
+<p class="page-subtitle">Technical Manuals, SOPs, recipes, specifications — version control with product & work center traceability</p>
+
+<div class="kpi-grid" id="docKPIs"></div>
+
+<div class="tab-bar">
+ <button class="tab-btn active" data-tab="tab-library">Document Library</button>
+ <button class="tab-btn" data-tab="tab-currency">Compliance Metrics</button>
+</div>
+
+<!-- DOCUMENT LIBRARY TAB -->
+<div class="tab-content active" id="tab-library">
+ <!-- Process Recipes Section -->
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Process Recipes</div>
+ <div class="chart-card"><h3>Process Recipes — linked to products, work centers, and materials</h3>
+  <p class="page-subtitle" style="margin-top:0">Each recipe defines the exact process parameters (temperature, speed, pressure) and material ingredients for producing a specific product on a specific work center.</p>
+  <div id="recipeCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:12px"></div>
+ </div>
+
+ <!-- Recipe Version Comparison -->
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-gold);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-gold);padding-bottom:4px">Recipe Version Comparison</div>
+ <div class="control-row" style="margin-bottom:12px">
+   <div class="control-group"><label>Recipe Code</label>
+     <select id="compareRecipe" style="min-width:200px"><option value="">Select recipe...</option></select></div>
+   <button class="btn btn-primary" onclick="compareRecipes()" style="align-self:flex-end">Compare Versions</button>
+ </div>
+ <div id="compareResult"></div>
+
+ <!-- Technical Documents Section -->
+ <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent-blue);margin:20px 0 8px;font-weight:700;border-bottom:1px solid var(--accent-blue);padding-bottom:4px">Technical Documents</div>
+ <div class="chart-card"><h3>Technical Documents — TMs, SOPs, Drawings, Certificates, MIL Specs</h3>
+  <table class="data-table" id="docTable">
+   <thead><tr><th>Type</th><th>Document</th><th>Rev</th><th>Status</th><th>Effective</th><th>Linked Products</th><th>Linked WCs</th><th>Description</th></tr></thead>
+   <tbody></tbody>
+  </table>
+ </div>
+</div>
+
+<!-- COMPLIANCE METRICS TAB -->
+<div class="tab-content" id="tab-currency">
+ <div class="kpi-grid" id="currencyKPIs"></div>
+ <div class="chart-card"><h3>Document Version Status</h3>
+  <div class="chart-container"><canvas id="currencyChart"></canvas></div>
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+const familyColors = {A:'#3b82f6',B:'#ef4444',C:'#f59e0b',D:'#6366f1',I:'#14b8a6',M:'#f97316',R:'#8b5cf6',S:'#ec4899',U:'#22c55e'};
+
+async function loadF4() {
+  const [recipes, docs, currency] = await Promise.all([
+    apiFetch('/api/documents/recipes'),
+    apiFetch('/api/documents/list'),
+    apiFetch('/api/documents/currency'),
+  ]);
+
+  // KPI cards
+  document.getElementById('docKPIs').innerHTML = `
+    <div class="kpi-card blue"><div class="kpi-label">Recipes</div><div class="kpi-value">${recipes.length}</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Documents</div><div class="kpi-value">${docs.length}</div></div>
+    <div class="kpi-card ${currency.currency_pct >= 95 ? 'green' : 'yellow'}"><div class="kpi-label">Currency</div><div class="kpi-value">${currency.currency_pct}%</div><div class="kpi-target">Target: 95%</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Doc Links</div><div class="kpi-value">${docs.reduce((s,d) => s + (d.links||[]).length, 0)}</div></div>
+  `;
+
+  // Recipe cards
+  const rc = document.getElementById('recipeCards');
+  rc.innerHTML = recipes.map(r => {
+    const fc = familyColors[r.family] || '#64748b';
+    const params = (r.parameters || []).map(p =>
+      `<tr><td>${p.parameter_name}</td><td class="number">${p.parameter_value} ${p.uom||''}</td><td class="number" style="font-size:11px;color:var(--text-muted)">[${p.lower_limit}–${p.upper_limit}]</td></tr>`
+    ).join('');
+    const ingr = (r.ingredients || []).map(i =>
+      `<div style="font-size:11px;color:var(--text-secondary)">• ${i.material_name} — ${i.qty_per_kft} ${i.uom}/KFT</div>`
+    ).join('');
+    const statusColor = r.status === 'Approved' ? 'green' : r.status === 'Draft' ? 'gray' : 'red';
+    return `<div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;padding:16px;border-left:4px solid ${fc}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong style="font-size:14px">${r.recipe_code}</strong>
+        <span class="badge badge-${statusColor}">v${r.version} ${r.status}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${r.description || ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;margin-bottom:10px">
+        <div><span style="color:var(--text-muted)">Product:</span> <strong style="color:${fc}">${r.product_id || 'General'}</strong></div>
+        <div><span style="color:var(--text-muted)">Work Center:</span> <strong>${r.work_center_id || '-'}</strong></div>
+        ${r.product_name ? `<div style="color:var(--text-muted)">${r.product_name}</div>` : ''}
+        ${r.wc_name ? `<div style="color:var(--text-muted)">${r.wc_name}</div>` : ''}
+      </div>
+      ${params ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px">Process Parameters</div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>${params}</tbody></table></div>` : ''}
+      ${ingr ? `<div><div style="font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px">Ingredients (per KFT)</div>${ingr}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  // Documents table
+  const tbody = document.querySelector('#docTable tbody');
+  tbody.innerHTML = docs.map(d => {
+    const statusColor = d.status === 'Active' ? 'green' : d.status === 'Draft' ? 'yellow' : 'red';
+    const prods = (d.linked_products || []).map(p => `<span class="badge badge-blue" style="margin:1px">${p}</span>`).join(' ');
+    const wcs = (d.linked_wcs || []).map(w => `<span class="badge badge-gray" style="margin:1px">${w}</span>`).join(' ');
+    return `<tr>
+      <td><span class="badge badge-blue">${d.doc_type}</span></td>
+      <td><strong>${d.doc_name}</strong></td>
+      <td>${d.revision || d.version || '-'}</td>
+      <td><span class="badge badge-${statusColor}">${d.status}</span></td>
+      <td>${d.effective_date || '-'}</td>
+      <td>${prods || '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${wcs || '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td style="font-size:11px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis">${d.notes || ''}</td>
+    </tr>`;
+  }).join('');
+
+  // Currency tab
+  document.getElementById('currencyKPIs').innerHTML = `
+    <div class="kpi-card ${currency.status === 'PASS' ? 'green' : 'red'}"><div class="kpi-label">Document Currency</div><div class="kpi-value">${currency.currency_pct}%</div><div class="kpi-target">Target: ≥95%</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Active Documents</div><div class="kpi-value">${currency.active_docs}</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Total Documents</div><div class="kpi-value">${currency.total_docs}</div></div>
+  `;
+
+  // Currency chart
+  const byType = {};
+  docs.forEach(d => { byType[d.doc_type] = (byType[d.doc_type] || 0) + 1; });
+  new Chart(document.getElementById('currencyChart'), {
+    type: 'bar', data: {
+      labels: Object.keys(byType),
+      datasets: [{ label: 'Documents', data: Object.values(byType),
+        backgroundColor: ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#14b8a6'] }]
+    }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+  });
+
+  updateTimestamp();
+}
+
+// Load recipe codes for comparison
+apiFetch('/api/documents/recipe_compare').then(d => {
+  const sel = document.getElementById('compareRecipe');
+  if (sel && d.recipe_codes) {
+    d.recipe_codes.forEach(r => {
+      const o = document.createElement('option');
+      o.value = r.recipe_code; o.textContent = `${r.recipe_code} (${r.versions} versions)`;
+      sel.appendChild(o);
+    });
+  }
+}).catch(e=>{});
+
+async function compareRecipes() {
+  const code = document.getElementById('compareRecipe').value;
+  if (!code) return;
+  const d = await apiFetch('/api/documents/recipe_compare?recipe_code=' + code);
+  const container = document.getElementById('compareResult');
+  if (!d.versions || d.versions.length < 2) {
+    container.innerHTML = '<p style="color:var(--text-muted)">Need at least 2 versions to compare</p>';
+    return;
+  }
+  const changes = d.changes || [];
+  let html = `<div class="chart-card" style="margin-top:8px"><h4>Changes: v${d.versions[d.versions.length-2].version} \u2192 v${d.versions[d.versions.length-1].version}</h4>`;
+  if (!changes.length) {
+    html += '<p style="color:var(--accent-green)">No parameter changes between versions</p>';
+  } else {
+    html += '<table class="data-table" style="font-size:12px"><thead><tr><th>Parameter</th><th>Change</th><th>Old Value</th><th>New Value</th></tr></thead><tbody>';
+    changes.forEach(c => {
+      const color = c.change === 'added' ? 'green' : c.change === 'removed' ? 'red' : 'yellow';
+      html += `<tr style="border-left:3px solid var(--accent-${color})"><td>${c.parameter}</td><td><span class="badge badge-${color}">${c.change}</span></td><td>${c.old_value != null ? c.old_value : '\u2014'}</td><td>${c.new_value != null ? c.new_value : '\u2014'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', loadF4);
+</script>{% endblock %}

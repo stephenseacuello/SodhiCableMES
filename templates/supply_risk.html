@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% set active_page = "supply_risk" %}
+{% block title %}Supply Chain Risk — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">Supply Chain Risk Map</h1>
+<p class="page-subtitle">Material lead times, single-source risks, safety stock coverage</p>
+<div class="chart-grid">
+ <div class="chart-card"><h3>Coverage Days by Material</h3><div class="chart-container"><canvas id="coverageChart"></canvas></div></div>
+ <div class="chart-card"><h3>Risk Assessment</h3><table class="data-table" id="riskTable"><thead><tr><th>Material</th><th>Coverage (days)</th><th>Lead Time</th><th>Supplier</th><th>Risk</th></tr></thead><tbody></tbody></table></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+async function loadRisk() {
+  try {
+    const data = await apiFetch('/api/supply-risk/coverage');
+    document.querySelector('#riskTable tbody').innerHTML = data.map(d => {
+      const risk = d.coverage_days < 7 ? 'red' : d.coverage_days < 14 ? 'yellow' : 'green';
+      return `<tr><td>${d.name}</td><td class="number">${d.coverage_days}</td><td class="number">${d.lead_time_days}d</td><td>${d.supplier||'-'}</td><td><span class="badge badge-${risk}">${risk=='red'?'HIGH':risk=='yellow'?'MED':'LOW'}</span></td></tr>`;
+    }).join('');
+    if (data.length) {
+      new Chart(document.getElementById('coverageChart'), { type:'bar', data:{ labels:data.map(d=>d.name.substring(0,15)), datasets:[{label:'Coverage Days',data:data.map(d=>d.coverage_days),backgroundColor:data.map(d=>d.coverage_days<7?'#ef4444':d.coverage_days<14?'#eab308':'#22c55e')}] }, options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}}} });
+    }
+  } catch(e) { showToast('Supply risk data unavailable','info'); }
+}
+document.addEventListener('DOMContentLoaded', loadRisk);
+</script>{% endblock %}

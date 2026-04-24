@@ -1,0 +1,524 @@
+{% extends "base.html" %}{% set active_page = "erp" %}
+{% block title %}ERP (Level 4) — SodhiCable MES{% endblock %}
+{% block content %}
+<h1 class="page-title">ERP — Level 4 (Business Planning & Logistics)</h1>
+<p class="page-subtitle">Dashboard &rarr; Plan &rarr; Sell &rarr; Source &rarr; Integrate</p>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="tab-planning">Planning</button>
+  <button class="tab-btn" data-tab="tab-orders">Orders</button>
+  <button class="tab-btn" data-tab="tab-supply">Supply Chain</button>
+  <button class="tab-btn" data-tab="tab-isa95">ISA-95</button>
+</div>
+
+<!-- ═══════════ TAB 1: DASHBOARD ═══════════ -->
+<div class="tab-content active" id="tab-dashboard">
+  <div id="simBanner" style="display:none;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);border-radius:8px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:var(--text-primary)">
+    ERP Simulator is stopped — click <strong>Start</strong> below to generate live business activity
+  </div>
+  <div class="kpi-grid">
+    <div class="kpi-card blue"><div class="kpi-label">Open Sales Orders</div><div class="kpi-value" id="kpiOpenSOs">--</div></div>
+    <div class="kpi-card"><div class="kpi-label">Open Purchase Orders</div><div class="kpi-value" id="kpiOpenPOs">--</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Gross Margin</div><div class="kpi-value" id="kpiMargin">--</div></div>
+    <div class="kpi-card"><div class="kpi-label">A/R Balance</div><div class="kpi-value" id="kpiAR">--</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Forecast Accuracy</div><div class="kpi-value" id="kpiForecast">--</div><span class="kpi-unit">%</span></div>
+    <div class="kpi-card"><div class="kpi-label">ISA-95 Msgs Today</div><div class="kpi-value" id="kpiMsgs">--</div></div>
+  </div>
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>ERP Simulator Control</h3>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="startSim(5)">Start (Demo Speed)</button>
+      <button class="btn" onclick="startSim(10)">Start (Normal)</button>
+      <button class="btn" onclick="stopSim()">Stop</button>
+      <span id="simStatus" style="font-size:13px">Status: <span class="badge badge-blue">Unknown</span></span>
+      <span id="simTick" style="font-size:12px;color:var(--text-muted)">Tick: 0 | Week: 0</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="chart-card"><h3>Revenue vs COGS by Period</h3><canvas id="chartRevCogs" height="220" role="img" aria-label="Revenue versus cost of goods sold by period bar chart"></canvas></div>
+    <div class="chart-card"><h3>A/R Aging</h3><canvas id="chartAR" height="220" role="img" aria-label="Accounts receivable aging donut chart"></canvas></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="chart-card"><h3>ISA-95 Message Flow</h3><canvas id="chartMsgFlow" height="220" role="img" aria-label="ISA-95 message flow by type donut chart"></canvas></div>
+    <div class="chart-card">
+      <h3>Cost Breakdown by Family</h3>
+      <div style="max-height:250px;overflow-y:auto">
+        <table class="data-table" id="costTable">
+          <caption class="sr-only">Cost breakdown by product family</caption>
+          <thead><tr><th scope="col">Family</th><th scope="col">Revenue/KFT</th><th scope="col">Cost/KFT</th><th scope="col">Margin/KFT</th><th scope="col">Margin %</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ TAB 2: PLANNING (S&OP + Forecast + MRP) ═══════════ -->
+<div class="tab-content" id="tab-planning">
+  <!-- S&OP Controls -->
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+    <div class="control-group">
+      <label for="sopFamily">Product Family</label>
+      <select id="sopFamily" onchange="loadSOP();loadForecast();loadCapacity()"><option value="">All Families</option></select>
+    </div>
+    <div class="control-group">
+      <label for="fcMethod">Forecast Method</label>
+      <select id="fcMethod"><option value="SES">SES</option><option value="DES">DES (Holt)</option></select>
+    </div>
+    <div class="control-group">
+      <label for="fcAlpha">Alpha (<span id="fcAlphaVal" aria-live="polite">0.3</span>)</label>
+      <input type="range" id="fcAlpha" aria-label="Forecast alpha parameter" min="0.1" max="0.9" step="0.1" value="0.3" style="width:100px"
+             oninput="document.getElementById('fcAlphaVal').textContent=this.value">
+    </div>
+    <button class="btn btn-primary" onclick="generateForecast()">Regenerate Forecast</button>
+    <button class="btn" onclick="approveSOP()">Approve Plan</button>
+  </div>
+
+  <!-- S&OP Grid -->
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>S&OP Planning Grid</h3>
+    <div style="max-height:350px;overflow:auto">
+      <table class="data-table" id="sopTable">
+        <caption class="sr-only">Sales and operations planning grid</caption>
+        <thead><tr><th scope="col">Family</th><th scope="col">Period</th><th scope="col">Demand</th><th scope="col">Production Plan</th>
+        <th scope="col">Begin Inv</th><th scope="col">End Inv</th><th scope="col">Cap Req</th><th scope="col">Cap Avail</th><th scope="col">Gap</th><th scope="col">Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="chart-card"><h3>Forecast vs Actual</h3><canvas id="chartForecast" height="220" role="img" aria-label="Forecast versus actual demand line chart"></canvas></div>
+    <div class="chart-card"><h3>Capacity by Family</h3><canvas id="chartCapacity" height="220" role="img" aria-label="Capacity required versus available by product family"></canvas></div>
+  </div>
+
+  <!-- MRP Section -->
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>MRP — BOM Explosion & Material Planning</h3>
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+      <div class="control-group">
+        <label for="mrpProduct">Product</label>
+        <select id="mrpProduct" style="min-width:240px"><option value="">-- Select Product --</option></select>
+      </div>
+      <div class="control-group">
+        <label for="mrpLot">Lot Sizing</label>
+        <select id="mrpLot"><option value="LFL">Lot-for-Lot</option><option value="EOQ">EOQ</option><option value="FOQ">Fixed Order Qty</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="runMRPExplode()">Explode BOM</button>
+      <button class="btn" onclick="runFullMRP()">Run Full MRP</button>
+    </div>
+    <div id="bomTree" style="font-size:13px;font-family:monospace;max-height:200px;overflow-y:auto;padding:8px;margin-bottom:8px"></div>
+    <div style="overflow-x:auto;max-height:400px;overflow-y:auto"><div id="mrpGrid"></div></div>
+  </div>
+</div>
+
+<!-- ═══════════ TAB 3: ORDERS (OTC + ATP) ═══════════ -->
+<div class="tab-content" id="tab-orders">
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label">Total Orders</div><div class="kpi-value" id="kpiTotalOrders">--</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Open Orders</div><div class="kpi-value" id="kpiOpenOrders">--</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Value ($)</div><div class="kpi-value" id="kpiOrderValue">--</div></div>
+    <div class="kpi-card green"><div class="kpi-label">On-Time %</div><div class="kpi-value" id="kpiOnTimeOrders">--</div><span class="kpi-unit">%</span></div>
+  </div>
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>Order-to-Cash Pipeline</h3>
+    <div style="max-height:400px;overflow-y:auto">
+      <table class="data-table" id="otcTable">
+        <caption class="sr-only">Order-to-cash pipeline</caption>
+        <thead><tr><th scope="col">SO ID</th><th scope="col">Customer</th><th scope="col">Product</th><th scope="col">Qty</th><th scope="col">Required</th>
+        <th scope="col">Stage</th><th scope="col">WO</th><th scope="col">Invoice</th><th scope="col">Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ATP: collapsible -->
+  <div class="chart-card">
+    <h3 style="cursor:pointer" onclick="document.getElementById('atpBody').style.display=document.getElementById('atpBody').style.display==='none'?'block':'none'">
+      Available-To-Promise (ATP) Check <span style="font-size:11px;color:var(--text-muted)">click to expand</span>
+    </h3>
+    <div id="atpBody" style="display:none">
+      <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+        <div class="control-group">
+          <label for="atpProduct">Product</label>
+          <select id="atpProduct" style="min-width:240px"><option value="">-- Select Product --</option></select>
+        </div>
+        <div class="control-group">
+          <label for="atpQty">Quantity (KFT)</label>
+          <input type="number" id="atpQty" min="0" step="0.1" value="10" style="width:120px">
+        </div>
+        <button class="btn btn-primary" onclick="checkATP()">Check Availability</button>
+      </div>
+      <div id="atpResult" style="display:none;padding:12px;border-radius:8px;border:1px solid var(--border-color)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ TAB 4: SUPPLY CHAIN (Procurement + Inventory) ═══════════ -->
+<div class="tab-content" id="tab-supply">
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label">Total POs</div><div class="kpi-value" id="kpiTotalPOs">--</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Open POs</div><div class="kpi-value" id="kpiPOsOpen">--</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Avg Lead Time</div><div class="kpi-value" id="kpiAvgLead">--</div><span class="kpi-unit">days</span></div>
+    <div class="kpi-card" style="border-left-color:var(--danger)"><div class="kpi-label">Deficit Items</div><div class="kpi-value" id="kpiDeficit">--</div></div>
+  </div>
+
+  <!-- Purchase Orders -->
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+    <div class="control-group">
+      <label for="poMaterial">Material</label>
+      <select id="poMaterial" style="min-width:220px"><option value="">-- Select Material --</option></select>
+    </div>
+    <div class="control-group">
+      <label for="poQty">Quantity</label>
+      <input type="number" id="poQty" min="1" value="200" style="width:100px">
+    </div>
+    <button class="btn btn-primary" onclick="createPO()">Create PO</button>
+  </div>
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>Purchase Orders</h3>
+    <div style="max-height:300px;overflow-y:auto">
+      <table class="data-table" id="poTable">
+        <caption class="sr-only">Purchase orders</caption>
+        <thead><tr><th scope="col">PO ID</th><th scope="col">Supplier</th><th scope="col">Material</th><th scope="col">Qty</th><th scope="col">Total $</th>
+        <th scope="col">Expected</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Material Availability -->
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>Material Availability</h3>
+    <div style="max-height:300px;overflow-y:auto">
+      <table class="data-table" id="invTable">
+        <caption class="sr-only">Material availability</caption>
+        <thead><tr><th scope="col">Material</th><th scope="col">On Hand</th><th scope="col">Required</th><th scope="col">Surplus/Deficit</th><th scope="col">Unit</th><th scope="col">Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Buffer + Supplier + Risk -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="chart-card">
+      <h3>Supplier Scorecard</h3>
+      <div style="max-height:250px;overflow-y:auto">
+        <table class="data-table" id="supplierTable">
+          <caption class="sr-only">Supplier scorecard</caption>
+          <thead><tr><th scope="col">Supplier</th><th scope="col">Materials</th><th scope="col">Lead Time</th><th scope="col">On-Hand</th><th scope="col">Avail %</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="chart-card"><h3>Supply Risk Coverage</h3><canvas id="chartRisk" height="220" role="img" aria-label="Supply risk coverage days by material"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h3>Buffer Inventory Status</h3>
+    <div id="bufferCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px"></div>
+  </div>
+</div>
+
+<!-- ═══════════ TAB 5: ISA-95 INTERFACE ═══════════ -->
+<div class="tab-content" id="tab-isa95">
+  <div class="kpi-grid">
+    <div class="kpi-card blue"><div class="kpi-label">L4 &rarr; L3 Messages</div><div class="kpi-value" id="kpiL4L3">--</div></div>
+    <div class="kpi-card green"><div class="kpi-label">L3 &rarr; L4 Messages</div><div class="kpi-value" id="kpiL3L4">--</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Messages</div><div class="kpi-value" id="kpiTotalMsgs">--</div></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="btn btn-primary btn-sm" onclick="loadISA95('')">All</button>
+    <button class="btn btn-sm" onclick="loadISA95('L4_to_L3')">L4 &rarr; L3</button>
+    <button class="btn btn-sm" onclick="loadISA95('L3_to_L4')">L3 &rarr; L4</button>
+  </div>
+  <div class="chart-card" style="margin-bottom:16px">
+    <h3>ISA-95 B2MML Message Log</h3>
+    <div style="max-height:500px;overflow-y:auto">
+      <table class="data-table" id="msgTable">
+        <caption class="sr-only">ISA-95 B2MML message log</caption>
+        <thead><tr><th scope="col">Time</th><th scope="col">Direction</th><th scope="col">Type</th><th scope="col">Source / Target</th><th scope="col">Summary</th><th scope="col">Reference</th><th scope="col">Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="chart-card"><h3>Message Flow by Type</h3><canvas id="chartISA95" height="250" role="img" aria-label="ISA-95 message count by type bar chart"></canvas></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}<script>
+let charts = {};
+let _dashTimer = null;
+
+function fmt$(v) { return '$' + (v||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}); }
+
+/* ═══ Tab switching ═══════════════════════════════════════ */
+function onTabSwitch(tabId) {
+  if (_dashTimer) { clearInterval(_dashTimer); _dashTimer = null; }
+  if (tabId === 'tab-dashboard') { loadDashboard(); _dashTimer = setInterval(loadDashboard, 15000); }
+  if (tabId === 'tab-planning') { loadFamilyDropdowns(); loadSOP(); loadForecast(); loadCapacity(); loadMRPProducts(); }
+  if (tabId === 'tab-orders') { loadOTC(); loadATPProducts(); }
+  if (tabId === 'tab-supply') { loadPOs(); loadInventory(); loadSuppliers(); loadRisk(); loadMaterialDropdown(); }
+  if (tabId === 'tab-isa95') { loadISA95(''); loadISA95Stats(); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
+      onTabSwitch(btn.dataset.tab);
+    });
+  });
+  const tab = new URLSearchParams(location.search).get('tab');
+  if (tab) {
+    // Map old tab names to new
+    const map = {orders:'orders', mrp:'planning', procurement:'supply', inventory:'supply', sop:'planning'};
+    const tabId = 'tab-' + (map[tab] || tab);
+    const btn = document.querySelector(`[data-tab="${tabId}"]`);
+    if (btn) btn.click(); else { loadDashboard(); _dashTimer = setInterval(loadDashboard, 15000); }
+  } else { loadDashboard(); _dashTimer = setInterval(loadDashboard, 15000); }
+});
+
+/* ═══ DASHBOARD ═══════════════════════════════════════════ */
+async function loadDashboard() {
+  const [d, pnl, ar, costs] = await Promise.all([
+    apiFetch('/api/erp/summary'), apiFetch('/api/erp/finance/pnl'),
+    apiFetch('/api/erp/finance/ar_aging'), apiFetch('/api/erp/finance/cost_breakdown'),
+  ]);
+  document.getElementById('kpiOpenSOs').textContent = d.open_sos;
+  document.getElementById('kpiOpenPOs').textContent = d.open_pos;
+  document.getElementById('kpiAR').textContent = fmt$(d.ar_balance);
+  document.getElementById('kpiForecast').textContent = d.forecast_accuracy || '--';
+  document.getElementById('kpiMsgs').textContent = d.isa95_messages_today;
+  document.getElementById('kpiMargin').textContent = fmt$(d.gross_margin);
+  loadSimStatus();
+
+  const activePnl = pnl.filter(p => (p.Revenue||0) > 0 || (p.COGS||0) > 0);
+  if (charts.revCogs) charts.revCogs.destroy();
+  charts.revCogs = new Chart(document.getElementById('chartRevCogs'), {
+    type:'bar', data:{ labels:activePnl.map(p=>p.period), datasets:[
+      {label:'Revenue',data:activePnl.map(p=>p.Revenue),backgroundColor:'rgba(34,197,94,0.6)'},
+      {label:'COGS',data:activePnl.map(p=>p.COGS),backgroundColor:'rgba(239,68,68,0.6)'},
+      {label:'Margin',data:activePnl.map(p=>p.GrossMargin),backgroundColor:'rgba(59,130,246,0.6)'},
+    ]}, options:{responsive:true,plugins:{legend:{labels:{color:'#ccc'}}},scales:{x:{ticks:{color:'#aaa'}},y:{ticks:{color:'#aaa'}}}}
+  });
+
+  if (charts.ar) charts.ar.destroy();
+  charts.ar = new Chart(document.getElementById('chartAR'), {
+    type:'doughnut', data:{ labels:['Current','30 Days','60 Days','90+ Days'],
+      datasets:[{data:[ar.current||0,ar.days_30||0,ar.days_60||0,ar.days_90_plus||0],
+        backgroundColor:['rgba(34,197,94,0.6)','rgba(245,158,11,0.6)','rgba(239,68,68,0.6)','rgba(127,29,29,0.6)']}]
+    }, options:{responsive:true,plugins:{legend:{labels:{color:'#ccc'}}}}
+  });
+
+  const stats = await apiFetch('/api/erp/isa95/stats');
+  if (charts.msgFlow) charts.msgFlow.destroy();
+  charts.msgFlow = new Chart(document.getElementById('chartMsgFlow'), {
+    type:'doughnut', data:{ labels:(stats.by_type||[]).map(t=>t.message_type),
+      datasets:[{data:(stats.by_type||[]).map(t=>t.count),
+        backgroundColor:['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#6366f1']}]
+    }, options:{responsive:true,plugins:{legend:{position:'right',labels:{color:'#ccc',font:{size:10}}}}}
+  });
+
+  document.querySelector('#costTable tbody').innerHTML = costs.map(c => {
+    const mp = c.avg_revenue ? Math.round(c.avg_margin/c.avg_revenue*100) : 0;
+    return `<tr><td>${c.family}</td><td class="number">${fmt$(c.avg_revenue)}</td><td class="number">${fmt$(c.avg_cost)}</td><td class="number">${fmt$(c.avg_margin)}</td><td class="number">${mp}%</td></tr>`;
+  }).join('');
+}
+
+async function loadSimStatus() {
+  const s = await apiFetch('/api/erp/sim/status');
+  document.getElementById('simStatus').innerHTML = 'Status: ' + (s.running ? '<span class="badge badge-green">Running</span>' : '<span class="badge badge-yellow">Stopped</span>');
+  document.getElementById('simTick').textContent = `Tick: ${s.tick} | Week: ${s.sim_week} | Orders: ${s.total_orders_generated} | POs: ${s.total_pos_created}`;
+  document.getElementById('simBanner').style.display = s.running ? 'none' : 'block';
+}
+async function startSim(interval) { await apiPost('/api/erp/sim/start',{interval:interval||10}); loadSimStatus(); showToast(`ERP Simulator started (${interval||10}s)`,'success'); setTimeout(loadDashboard,2000); }
+async function stopSim() { await apiPost('/api/erp/sim/stop',{}); loadSimStatus(); showToast('ERP Simulator stopped','info'); }
+
+/* ═══ PLANNING (S&OP + Forecast + MRP) ═══════════════════ */
+async function loadFamilyDropdowns() {
+  const prods = await apiFetch('/api/sales/products');
+  const sel = document.getElementById('sopFamily');
+  if (sel.options.length <= 1) [...new Set(prods.map(p=>p.family))].sort().forEach(f => { const o=document.createElement('option'); o.value=f; o.textContent='Family '+f; sel.appendChild(o); });
+}
+
+async function loadSOP() {
+  const rows = await apiFetch('/api/erp/sop/plan?family='+document.getElementById('sopFamily').value);
+  document.querySelector('#sopTable tbody').innerHTML = rows.map(r => {
+    const gc = r.capacity_gap<0?'color:var(--danger)':'color:var(--success)';
+    const sb = r.status==='Approved'?'green':r.status==='Locked'?'blue':'yellow';
+    return `<tr><td>${r.product_family}</td><td>${r.period_start}</td><td class="number">${r.demand_forecast}</td>
+      <td><input type="number" value="${r.production_plan}" style="width:80px" data-fam="${r.product_family}" data-period="${r.period_start}" onchange="adjustSOP(this)"></td>
+      <td class="number">${r.beginning_inventory}</td><td class="number">${r.ending_inventory}</td>
+      <td class="number">${r.capacity_required_hrs}</td><td class="number">${r.capacity_available_hrs}</td>
+      <td class="number" style="${gc}">${r.capacity_gap}</td><td><span class="badge badge-${sb}">${r.status}</span></td></tr>`;
+  }).join('');
+}
+
+async function adjustSOP(el) { await apiPost('/api/erp/sop/adjust',{family:el.dataset.fam,period_start:el.dataset.period,production_plan:parseFloat(el.value)}); showToast('Plan updated','success'); }
+async function approveSOP() { await apiPost('/api/erp/sop/approve',{}); showToast('S&OP Plan approved','success'); loadSOP(); }
+
+async function loadForecast() {
+  const fcRes = await apiFetch('/api/erp/forecast?family='+document.getElementById('sopFamily').value);
+  const data = Array.isArray(fcRes) ? fcRes : (fcRes.data || []);
+  if (!data.length) return;
+  const allPeriods = [...new Set(data.map(d=>d.period_start))].sort();
+  const families = [...new Set(data.map(d=>d.product_family))].sort();
+  const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#6366f1','#14b8a6'];
+  const datasets = [];
+  families.forEach((f,i) => {
+    const fd = data.filter(d=>d.product_family===f);
+    const fcMap = {}; fd.forEach(d=>fcMap[d.period_start]=d.forecast_qty);
+    const actMap = {}; fd.filter(d=>d.actual_qty).forEach(d=>actMap[d.period_start]=d.actual_qty);
+    datasets.push({label:f+' Fc',data:allPeriods.map(p=>fcMap[p]||null),borderColor:colors[i%colors.length],borderDash:[5,5],fill:false,tension:0.3,spanGaps:true});
+    if (Object.keys(actMap).length) datasets.push({label:f+' Act',data:allPeriods.map(p=>actMap[p]||null),borderColor:colors[i%colors.length],fill:false,tension:0.3,spanGaps:true,pointRadius:3});
+  });
+  if (charts.forecast) charts.forecast.destroy();
+  charts.forecast = new Chart(document.getElementById('chartForecast'),{type:'line',data:{labels:allPeriods,datasets},
+    options:{responsive:true,plugins:{legend:{labels:{color:'#ccc',font:{size:10}}}},scales:{x:{ticks:{color:'#aaa',maxRotation:45,maxTicksLimit:12}},y:{ticks:{color:'#aaa'}}}}});
+}
+
+async function loadCapacity() {
+  const cap = await apiFetch('/api/erp/sop/capacity');
+  if (charts.capacity) charts.capacity.destroy();
+  charts.capacity = new Chart(document.getElementById('chartCapacity'),{type:'bar',data:{
+    labels:cap.map(c=>'Family '+c.family), datasets:[
+      {label:'Required',data:cap.map(c=>c.capacity_required_hrs),backgroundColor:'rgba(239,68,68,0.6)'},
+      {label:'Available',data:cap.map(c=>c.capacity_available_hrs),backgroundColor:'rgba(34,197,94,0.3)',borderColor:'rgba(34,197,94,0.8)',borderWidth:1},
+    ]}, options:{responsive:true,plugins:{legend:{labels:{color:'#ccc'}}},scales:{x:{ticks:{color:'#aaa'}},y:{ticks:{color:'#aaa'}}}}});
+}
+
+async function generateForecast() {
+  await apiPost('/api/erp/forecast/generate',{method:document.getElementById('fcMethod').value,alpha:parseFloat(document.getElementById('fcAlpha').value)});
+  showToast('Forecasts regenerated','success'); loadForecast();
+}
+
+async function loadMRPProducts() {
+  const prods = await apiFetch('/api/mrp/products');
+  const sel = document.getElementById('mrpProduct');
+  if (sel.options.length<=1) (prods.products||[]).forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.id+' — '+p.name+' ['+p.family+']';sel.appendChild(o);});
+}
+
+async function runMRPExplode() {
+  const pid=document.getElementById('mrpProduct').value, lot=document.getElementById('mrpLot').value;
+  if (!pid){showToast('Select a product','error');return;}
+  const data=await apiFetch(`/api/mrp/explode?product=${pid}&lot_method=${lot}`);
+  function renderTree(n,d=0){let h='<div style="padding-left:'+(d*20)+'px">'+(d?'|-- ':'')+n.name+(n.qty!==1?' ('+n.qty+')':'')+'</div>';(n.children||[]).forEach(c=>h+=renderTree(c,d+1));return h;}
+  document.getElementById('bomTree').innerHTML=data.bom?renderTree(data.bom):'<em>No BOM data</em>';
+  const weeks=data.weeks||8;let html='';
+  (data.grid||[]).forEach(item=>{html+=`<h4 style="margin:12px 0 4px;font-size:13px">${item.name}</h4><table class="data-table" style="font-size:12px"><thead><tr><th>Row</th>`;
+    for(let w=1;w<=weeks;w++)html+=`<th>Wk ${w}</th>`;html+='</tr></thead><tbody>';
+    (item.rows||[]).forEach(row=>{html+=`<tr><td><strong>${row.label}</strong></td>`;(row.values||[]).forEach(v=>{const c=v<0?'color:var(--danger)':v>0?'color:var(--success)':'';html+=`<td class="number" style="${c}">${v}</td>`;});html+='</tr>';});
+    html+='</tbody></table>';});
+  document.getElementById('mrpGrid').innerHTML=html||'<em>Select a product and click Explode BOM</em>';
+}
+
+async function runFullMRP(){const r=await apiPost('/api/mrp/run',{});showToast(`MRP: ${r.total_orders||0} planned orders, ${r.past_due||0} past due`,'success');}
+
+/* ═══ ORDERS ══════════════════════════════════════════════ */
+async function loadOTC() {
+  const [pipeline,ordersRes] = await Promise.all([apiFetch('/api/erp/otc/pipeline'),apiFetch('/api/sales/orders')]);
+  const orders = Array.isArray(ordersRes) ? ordersRes : (ordersRes.data || []);
+  document.getElementById('kpiTotalOrders').textContent=orders.length;
+  document.getElementById('kpiOpenOrders').textContent=orders.filter(o=>o.status==='Open'||o.status==='InProgress').length;
+  document.getElementById('kpiOrderValue').textContent=fmt$(orders.reduce((s,o)=>s+(o.total_value||0),0));
+  const shipped=orders.filter(o=>o.status==='Shipped');
+  document.getElementById('kpiOnTimeOrders').textContent=shipped.length?Math.round(shipped.filter(o=>o.required_date>=o.order_date).length/shipped.length*100):'--';
+  const sc={'Order Received':'blue','WO Created':'yellow','In Production':'yellow','Produced':'green','Shipped':'green','Invoiced':'blue','Paid':'green'};
+  document.querySelector('#otcTable tbody').innerHTML=pipeline.map(p=>{
+    let a='';
+    if(p.stage_num===0)a=`<button class="btn btn-sm btn-primary" onclick="otcCreateWO('${p.sales_order_id}')">Create WO</button>`;
+    else if(p.stage_num===3)a=`<button class="btn btn-sm" onclick="otcShip('${p.sales_order_id}')">Ship</button>`;
+    else if(p.stage_num===4)a=`<button class="btn btn-sm" onclick="otcInvoice('${p.sales_order_id}')">Invoice</button>`;
+    return `<tr><td>${p.sales_order_id}</td><td>${p.customer_name}</td><td>${p.product_id||'--'}</td>
+      <td class="number">${p.quantity||'--'}</td><td>${p.required_date||'--'}</td>
+      <td><span class="badge badge-${sc[p.stage]||'blue'}">${p.stage}</span></td>
+      <td>${p.wo_id||'--'}</td><td>${p.invoice_id||'--'}</td><td>${a}</td></tr>`;
+  }).join('');
+}
+async function otcCreateWO(id){await apiPost('/api/erp/otc/create_wo',{sales_order_id:id});showToast('WO created','success');loadOTC();}
+async function otcShip(id){await apiPost('/api/erp/otc/ship',{sales_order_id:id});showToast('Shipped','success');loadOTC();}
+async function otcInvoice(id){const r=await apiPost('/api/erp/otc/invoice',{sales_order_id:id});showToast(`Invoice ${r.invoice_id}: ${fmt$(r.total)}`,'success');loadOTC();}
+
+async function loadATPProducts(){const prods=await apiFetch('/api/sales/products');const sel=document.getElementById('atpProduct');
+  if(sel.options.length<=1)prods.forEach(p=>{const o=document.createElement('option');o.value=p.product_id;o.textContent=p.product_id+' — '+(p.name||'');sel.appendChild(o);});}
+async function checkATP(){const pid=document.getElementById('atpProduct').value,qty=parseFloat(document.getElementById('atpQty').value);
+  if(!pid){showToast('Select a product','error');return;}const r=await apiPost('/api/sales/atp',{product_id:pid,qty_kft:qty});
+  document.getElementById('atpResult').style.display='block';
+  document.getElementById('atpResult').innerHTML=`<span class="badge badge-${r.can_promise?'green':'red'}">${r.can_promise?'CAN PROMISE':'CANNOT PROMISE'}</span> &mdash; Available: ${r.qty_available} KFT, Requested: ${r.qty_requested} KFT`;}
+
+/* ═══ SUPPLY CHAIN (Procurement + Inventory) ═════════════ */
+async function loadPOs() {
+  const posRes=await apiFetch('/api/erp/po/list');
+  const pos=Array.isArray(posRes)?posRes:(posRes.data||[]);
+  document.getElementById('kpiTotalPOs').textContent=pos.length;
+  document.getElementById('kpiPOsOpen').textContent=pos.filter(p=>['Draft','Approved','Sent'].includes(p.status)).length;
+  document.querySelector('#poTable tbody').innerHTML=pos.map(p=>{
+    const sc={Draft:'blue',Approved:'yellow',Sent:'yellow',Received:'green',Closed:'green',Cancelled:'red'}[p.status]||'blue';
+    let a='';if(p.status==='Draft')a=`<button class="btn btn-sm" onclick="approvePO('${p.po_id}')">Approve</button>`;
+    if(p.status==='Approved'||p.status==='Sent')a=`<button class="btn btn-sm" onclick="receivePO('${p.po_id}')">Receive</button>`;
+    return `<tr><td>${p.po_id}</td><td>${p.supplier}</td><td>${p.material_name||p.material_id}</td>
+      <td class="number">${p.quantity}</td><td class="number">${fmt$(p.total_cost)}</td>
+      <td>${p.expected_delivery||'--'}</td><td><span class="badge badge-${sc}">${p.status}</span></td><td>${a}</td></tr>`;
+  }).join('');
+}
+
+async function loadInventory() {
+  const inv=await apiFetch('/api/inventory/availability');
+  const deficit=(inv||[]).filter(m=>(m.surplus_deficit||0)<0).length;
+  document.getElementById('kpiDeficit').textContent=deficit;
+  document.querySelector('#invTable tbody').innerHTML=(inv||[]).map(m=>{
+    const sd=m.surplus_deficit||(m.on_hand||0)-(m.required||0);
+    const sc=sd>0?'green':sd<0?'red':'yellow';
+    return `<tr><td>${m.name||m.material_id||'--'}</td><td class="number">${m.on_hand||m.qty_on_hand||0}</td>
+      <td class="number">${m.required||0}</td><td class="number" style="color:var(--${sd>=0?'success':'danger'})">${sd}</td>
+      <td>${m.uom||m.unit||'--'}</td><td><span class="badge badge-${sc}">${sd>=0?'OK':'DEFICIT'}</span></td></tr>`;
+  }).join('');
+  try{const buf=await apiFetch('/api/inventory/buffers');document.getElementById('bufferCards').innerHTML=(buf||[]).map(b=>{
+    const pct=b.max_level?Math.round((b.current_qty||0)/b.max_level*100):0;const color=pct>60?'var(--success)':pct>30?'var(--warning)':'var(--danger)';
+    return `<div style="background:var(--bg-secondary);padding:12px;border-radius:8px;border-left:3px solid ${color}">
+      <div style="font-size:12px;color:var(--text-muted)">${b.item_name||b.material_id||b.product_id||'--'}</div>
+      <div style="font-size:18px;font-weight:600">${b.current_qty||0} / ${b.max_level||0}</div>
+      <div style="background:var(--bg-primary);height:6px;border-radius:3px;margin-top:6px"><div style="width:${Math.min(pct,100)}%;height:100%;background:${color};border-radius:3px"></div></div>
+    </div>`;}).join('');}catch(e){}
+}
+
+async function loadMaterialDropdown(){const mats=await apiFetch('/api/erp/materials');const sel=document.getElementById('poMaterial');
+  if(sel.options.length<=1)mats.forEach(m=>{const o=document.createElement('option');o.value=m.material_id;o.textContent=m.material_id+' — '+m.name+' ($'+m.unit_cost+'/'+m.uom+')';sel.appendChild(o);});}
+async function createPO(){const mid=document.getElementById('poMaterial').value,qty=parseInt(document.getElementById('poQty').value);
+  if(!mid){showToast('Select a material','error');return;}const r=await apiPost('/api/erp/po/create',{material_id:mid,quantity:qty});
+  if(r.ok){showToast(`PO ${r.po_id} created`,'success');loadPOs();}else showToast(r.error||'Error','error');}
+async function approvePO(id){await apiPost('/api/erp/po/approve',{po_id:id});showToast('PO approved','success');loadPOs();}
+async function receivePO(id){const r=await apiPost('/api/erp/po/receive',{po_id:id});showToast(`Received: ${r.accepted} accepted, ${r.rejected} rejected`,'success');loadPOs();}
+
+async function loadSuppliers(){const sc=await apiFetch('/api/suppliers/scorecard');
+  document.getElementById('kpiAvgLead').textContent=sc.length?Math.round(sc.reduce((s,r)=>s+(r.avg_lead_time||0),0)/sc.length):'--';
+  document.querySelector('#supplierTable tbody').innerHTML=sc.map(s=>{const ac=(s.availability_pct||0)>=90?'green':(s.availability_pct||0)>=70?'yellow':'red';
+    return `<tr><td>${s.supplier}</td><td class="number">${s.materials_supplied}</td><td class="number">${s.avg_lead_time}d</td>
+      <td class="number">${s.total_on_hand}</td><td><span class="badge badge-${ac}">${s.availability_pct}%</span></td></tr>`;}).join('');}
+
+async function loadRisk(){try{const risk=await apiFetch('/api/supply-risk/coverage');if(charts.risk)charts.risk.destroy();
+  if(risk&&risk.length){charts.risk=new Chart(document.getElementById('chartRisk'),{type:'bar',data:{
+    labels:risk.map(r=>(r.name||r.material_id||'').substring(0,15)),datasets:[{label:'Coverage Days',data:risk.map(r=>r.coverage_days||0),
+      backgroundColor:risk.map(r=>(r.coverage_days||0)<7?'rgba(239,68,68,0.6)':(r.coverage_days||0)<14?'rgba(245,158,11,0.6)':'rgba(34,197,94,0.6)')}]},
+    options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#aaa'}},y:{ticks:{color:'#aaa',font:{size:10}}}}}});}}catch(e){}}
+
+/* ═══ ISA-95 ══════════════════════════════════════════════ */
+async function loadISA95(dir){const msgs=await apiFetch('/api/erp/isa95/messages?direction='+dir+'&limit=100');
+  document.querySelector('#msgTable tbody').innerHTML=msgs.map(m=>{const dc=m.direction==='L4_to_L3'?'blue':'green';const arrow=m.direction==='L4_to_L3'?'&#8595;':'&#8593;';
+    return `<tr><td style="font-size:11px">${m.timestamp||'--'}</td><td><span class="badge badge-${dc}">${arrow} ${m.direction.replace(/_/g,' ')}</span></td>
+      <td>${m.message_type}</td><td>${m.source_system} &rarr; ${m.target_system}</td>
+      <td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis">${m.payload_summary||'--'}</td>
+      <td>${m.reference_id||'--'}</td><td><span class="badge badge-green">${m.status}</span></td></tr>`;}).join('');}
+
+async function loadISA95Stats(){const s=await apiFetch('/api/erp/isa95/stats');
+  document.getElementById('kpiL4L3').textContent=s.total_l4_to_l3;document.getElementById('kpiL3L4').textContent=s.total_l3_to_l4;document.getElementById('kpiTotalMsgs').textContent=s.total;
+  if(charts.isa95)charts.isa95.destroy();charts.isa95=new Chart(document.getElementById('chartISA95'),{type:'bar',data:{
+    labels:(s.by_type||[]).map(t=>t.message_type),datasets:[{label:'Count',data:(s.by_type||[]).map(t=>t.count),
+      backgroundColor:(s.by_type||[]).map(t=>t.direction==='L4_to_L3'?'rgba(59,130,246,0.6)':'rgba(34,197,94,0.6)')}]},
+    options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#aaa'}},y:{ticks:{color:'#aaa',font:{size:10}}}}}});}
+</script>{% endblock %}

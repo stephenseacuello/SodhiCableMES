@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+{% block title %}Dashboard — SodhiCable MES{% endblock %}
+{% block content %}
+<script>document.body.dataset.tour='dashboard'</script>
+<h1 class="page-title">Production Dashboard</h1>
+<p class="page-subtitle">Supervisor-level view — real-time KPIs across all work centers (plant-wide OEE)</p>
+
+<!-- Filter Bar -->
+<div class="control-panel" style="margin-bottom:12px">
+ <div class="control-row">
+  <div class="control-group"><label for="dashDateFrom">From</label>
+    <input type="date" id="dashDateFrom" onchange="reloadDashboard()"></div>
+  <div class="control-group"><label for="dashDateTo">To</label>
+    <input type="date" id="dashDateTo" onchange="reloadDashboard()"></div>
+  <div class="control-group"><label for="dashWC">Work Center</label>
+    <select id="dashWC" onchange="reloadDashboard()"><option value="">All Work Centers</option></select></div>
+  <div class="control-group"><label for="dashShift">Shift</label>
+    <select id="dashShift" onchange="reloadDashboard()"><option value="">All Shifts</option>
+      <option value="Day">Day</option><option value="Swing">Swing</option><option value="Night">Night</option>
+    </select></div>
+  <div class="control-group"><label for="dashFamily">Product Family</label>
+    <select id="dashFamily" onchange="onFamilyChange()"><option value="">All Families</option>
+      <option value="A">Instrumentation</option><option value="B">Armored Control</option>
+      <option value="C">DHT (Down Hole)</option><option value="D">Down Hole Special</option>
+      <option value="I">Insulated Conductors</option><option value="M">Medium Voltage</option>
+      <option value="R">Utility/Building</option><option value="S">Shipboard/Fiber</option>
+      <option value="U">Fire-Rated (UL)</option>
+    </select></div>
+  <div class="control-group"><label for="dashProduct">Product / Part #</label>
+    <select id="dashProduct" onchange="reloadDashboard()" style="width:180px"><option value="">All Products</option></select></div>
+  <button class="btn" onclick="clearDashFilters()" style="margin-top:18px">Clear</button>
+  <span id="dashFilterStatus" style="margin-top:20px;font-size:11px;color:var(--accent-gold)"></span>
+ </div>
+</div>
+
+<div class="kpi-grid" aria-live="polite">
+ <div class="kpi-card blue" id="kpi-oee"><div class="kpi-label">Plant OEE</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 85%</div></div>
+ <div class="kpi-card blue" id="kpi-throughput"><div class="kpi-label">Completed WOs</div><div class="kpi-value">--</div><span class="kpi-unit">WOs</span><div class="kpi-target">This period</div></div>
+ <div class="kpi-card blue" id="kpi-wip"><div class="kpi-label">WIP</div><div class="kpi-value">--</div><span class="kpi-unit">active</span><div class="kpi-target">In process</div></div>
+ <div class="kpi-card blue" id="kpi-ontime"><div class="kpi-label">On-Time</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 90%</div></div>
+ <div class="kpi-card blue" id="kpi-fpy"><div class="kpi-label">First Pass Yield</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 97%</div></div>
+ <div class="kpi-card blue" id="kpi-util"><div class="kpi-label">Avg Utilization</div><div class="kpi-value">--</div><span class="kpi-unit">%</span><div class="kpi-target">Target: 80%</div></div>
+</div>
+
+<div class="chart-grid">
+ <div class="chart-card"><h3>Plant OEE Breakdown (A × P × Q) by Work Center</h3><div class="chart-container"><canvas id="oeeChart" role="img" aria-label="OEE breakdown by work center showing availability, performance, and quality"></canvas></div></div>
+ <div class="chart-card"><h3>Scrap Pareto — Top Causes (Focused Improvement)</h3><div class="chart-container"><canvas id="paretoChart" role="img" aria-label="Scrap Pareto chart showing top scrap causes"></canvas></div></div>
+ <div class="chart-card"><h3>Downtime by Category (6 Big Losses)</h3><div class="chart-container"><canvas id="downtimeChart" role="img" aria-label="Downtime by category showing the six big losses"></canvas></div></div>
+ <div class="chart-card"><h3>Downtime by Work Center</h3><div class="chart-container"><canvas id="downtimeWcChart" role="img" aria-label="Downtime by work center bar chart"></canvas></div></div>
+ <div class="chart-card"><h3>Scrap by Work Center</h3><div class="chart-container"><canvas id="scrapWcChart" role="img" aria-label="Scrap footage by work center bar chart"></canvas></div></div>
+ <div class="chart-card"><h3>Throughput Trend (Output ft/day)</h3><div class="chart-container"><canvas id="throughputTrendChart" role="img" aria-label="Throughput trend showing output feet per day"></canvas></div></div>
+ <div class="chart-card"><h3>Work Order Status</h3><div class="chart-container"><canvas id="woChart" role="img" aria-label="Work order status distribution chart"></canvas></div></div>
+ <div class="chart-card"><h3>Schedule Adherence</h3>
+   <div id="schedAdherenceContent">
+     <div class="kpi-grid" id="schedKPIs" style="grid-template-columns:repeat(4,1fr);margin-bottom:6px"></div>
+     <div style="max-height:180px;overflow-y:auto">
+     <table class="data-table" id="schedTable" style="font-size:11px"><caption class="sr-only">Schedule adherence details</caption><thead><tr><th scope="col">WO</th><th scope="col">Product</th><th scope="col">Due</th><th scope="col">Status</th></tr></thead><tbody></tbody></table>
+     </div>
+   </div>
+ </div>
+</div>
+
+<!-- Maintenance Charts -->
+<div class="chart-grid" style="margin-top:16px">
+ <div class="chart-card"><h3>PM Status by Work Center</h3><div class="chart-container"><canvas id="maintStatusChart" role="img" aria-label="Preventive maintenance status by work center"></canvas></div></div>
+ <div class="chart-card"><h3>Days Until PM Due (Equipment Timeline)</h3><div class="chart-container"><canvas id="maintTimelineChart" role="img" aria-label="Days until preventive maintenance due by equipment"></canvas></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard-charts.js') }}"></script>
+{% endblock %}
